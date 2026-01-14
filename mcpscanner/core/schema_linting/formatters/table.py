@@ -351,17 +351,35 @@ class TableFormatter:
         lines.append("")
         lines.append("=" * 60)
         
+        # Aggregate scan stats
+        total_tools = sum(r.stats.tools for r in results)
+        total_prompts = sum(r.stats.prompts for r in results)
+        total_resources = sum(r.stats.resources for r in results)
+        
         # Get total rules from registry
         try:
             from ..rules.registry import get_default_registry
             registry = get_default_registry()
             total_rules = len(registry)
         except Exception:
-            total_rules = 35  # Fallback
+            total_rules = 37  # Fallback
         
         rules_passed = total_rules - len(rules_with_findings)
         
         lines.append(self._bold("📊 Summary"))
+        
+        # Show scan stats if any items were found
+        scanned_parts = []
+        if total_tools:
+            scanned_parts.append(f"{total_tools} tool{'s' if total_tools != 1 else ''}")
+        if total_prompts:
+            scanned_parts.append(f"{total_prompts} prompt{'s' if total_prompts != 1 else ''}")
+        if total_resources:
+            scanned_parts.append(f"{total_resources} resource{'s' if total_resources != 1 else ''}")
+        
+        if scanned_parts:
+            lines.append(f"  Scanned:       {', '.join(scanned_parts)}")
+        
         lines.append(f"  Rules checked: {total_rules}")
         lines.append(f"  Rules passed:  {self._colorize(str(rules_passed), Severity.INFO)} ({rules_passed * 100 // total_rules}%)")
         lines.append(f"  Rules failed:  {len(rules_with_findings)}")

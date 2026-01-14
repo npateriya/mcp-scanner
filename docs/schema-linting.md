@@ -120,6 +120,7 @@ Resource       0      0      0      0
 
 ============================================================
 📊 Summary
+  Scanned:       3 tools
   Rules checked: 37
   Rules passed:  35 (94%)
   Rules failed:  2
@@ -665,6 +666,7 @@ hint       tool-output-schema-defined        No output schema defined           
 
 ============================================================
 📊 Summary
+  Scanned:       3 tools
   Rules checked: 37
   Rules passed:  35 (94%)
   Rules failed:  2
@@ -726,6 +728,7 @@ Tool Quality
 
 ============================================================
 📊 Summary
+  Scanned:       2 tools, 1 prompt, 1 resource
   Rules checked: 37
   Rules passed:  37 (100%)
   Rules failed:  0

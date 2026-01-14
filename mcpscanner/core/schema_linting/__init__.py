@@ -37,7 +37,7 @@ CLI usage:
 """
 
 from .rule_base import Finding, RuleConfig, Rule, Severity
-from .linter import SchemaLinter, LintConfig
+from .linter import SchemaLinter, LintConfig, LintResult, ScanStats
 from .rule_loader import load_config as load_lint_config
 from .formatters import TextFormatter, JsonFormatter, TableFormatter
 from .orchestrator import LintOrchestrator, LintOptions
@@ -53,6 +53,8 @@ __all__ = [
     "Severity",
     "SchemaLinter",
     "LintConfig",
+    "LintResult",
+    "ScanStats",
     # Orchestrator (main entry point)
     "LintOrchestrator",
     "LintOptions",

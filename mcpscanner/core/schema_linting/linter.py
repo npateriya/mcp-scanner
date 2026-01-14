@@ -87,6 +87,26 @@ class LintConfig:
 
 
 @dataclass
+class ScanStats:
+    """Statistics about what was scanned."""
+    tools: int = 0
+    prompts: int = 0
+    resources: int = 0
+    
+    @property
+    def total(self) -> int:
+        return self.tools + self.prompts + self.resources
+    
+    def __add__(self, other: "ScanStats") -> "ScanStats":
+        """Allow adding stats together."""
+        return ScanStats(
+            tools=self.tools + other.tools,
+            prompts=self.prompts + other.prompts,
+            resources=self.resources + other.resources,
+        )
+
+
+@dataclass
 class LintResult:
     """Result of a linting operation.
     
@@ -95,11 +115,13 @@ class LintResult:
         errors: List of infrastructure errors (connection, parse failures)
         source: Source identifier (file path, URL, etc.)
         config_warnings: Warnings about configuration issues
+        stats: Statistics about items scanned
     """
     findings: list[Finding] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)  # P1: Separate infrastructure errors
     config_warnings: list[str] = field(default_factory=list)  # P0: Config validation warnings
     source: str = ""
+    stats: ScanStats = field(default_factory=ScanStats)  # Scan statistics
     
     @property
     def error_count(self) -> int:
@@ -227,6 +249,9 @@ class SchemaLinter:
             normalized = self._normalize_list_data(data)
         else:
             normalized = data
+        
+        # Count items for stats
+        result.stats = self._count_items(normalized)
         
         # Run all enabled built-in rules
         for rule in self.registry.get_all():
@@ -393,6 +418,22 @@ class SchemaLinter:
         else:
             # Default to tools
             return {"tools": data}
+    
+    def _count_items(self, data: dict) -> ScanStats:
+        """Count the number of tools, prompts, and resources in the data."""
+        stats = ScanStats()
+        
+        if isinstance(data, dict):
+            tools = data.get("tools", [])
+            stats.tools = len(tools) if isinstance(tools, list) else 0
+            
+            prompts = data.get("prompts", [])
+            stats.prompts = len(prompts) if isinstance(prompts, list) else 0
+            
+            resources = data.get("resources", [])
+            stats.resources = len(resources) if isinstance(resources, list) else 0
+        
+        return stats
     
     def list_rules(self) -> list[dict[str, str]]:
         """List all available rules with their metadata."""
