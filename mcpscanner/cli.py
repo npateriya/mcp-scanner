@@ -51,6 +51,10 @@ from mcpscanner.core.analyzers.static_analyzer import StaticAnalyzer
 from mcpscanner.core.analyzers.yara_analyzer import YaraAnalyzer
 from mcpscanner.core.analyzers.llm_analyzer import LLMAnalyzer
 from mcpscanner.core.analyzers.api_analyzer import ApiAnalyzer
+from mcpscanner.core.schema_linting import (
+    LintOrchestrator, LintOptions, LintConfig, load_lint_config,
+    TextFormatter, JsonFormatter, TableFormatter,
+)
 
 logger = get_logger(__name__)
 
@@ -985,6 +989,63 @@ async def main():
         help="Bearer token for authentication",
     )
 
+    # Lint subcommand - Schema quality validation (Spectral-like)
+    # Simplified: 10 arguments (down from 16)
+    p_lint = subparsers.add_parser(
+        "lint", help="Validate MCP definitions for quality and best practices"
+    )
+    p_lint.add_argument(
+        "files",
+        nargs="*",
+        help="JSON/YAML files containing MCP definitions to lint",
+    )
+    p_lint.add_argument(
+        "--config", "-c",
+        help="Path to .mcp-lint.yaml configuration file",
+    )
+    p_lint.add_argument(
+        "--format", "-f",
+        choices=["text", "json", "table"],
+        default="table",
+        help="Output format (default: %(default)s)",
+    )
+    p_lint.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show detailed output with paths",
+    )
+    p_lint.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable colored output",
+    )
+    p_lint.add_argument(
+        "--fail-on-warn",
+        action="store_true",
+        help="Exit with error code if warnings are found (for CI)",
+    )
+    p_lint.add_argument(
+        "--list-rules",
+        action="store_true",
+        help="List all available linting rules and exit",
+    )
+    p_lint.add_argument(
+        "--server-url",
+        help="URL of a live MCP server to lint",
+    )
+    p_lint.add_argument(
+        "--bearer-token",
+        dest="lint_bearer_token",
+        help="Bearer token for authenticated servers",
+    )
+    p_lint.add_argument(
+        "--rule",
+        action="append",
+        dest="rule_overrides",
+        metavar="RULE:SEVERITY",
+        help="Override rule severity (e.g., 'rule-id:off')",
+    )
+
     # API key and endpoint configuration
     parser.add_argument(
         "--api-key",
@@ -1174,8 +1235,78 @@ async def main():
         os.environ["MCP_SCANNER_LLM_TIMEOUT"] = str(args.llm_timeout)
 
     try:
+        # Handle lint subcommand
+        if args.cmd == "lint":
+            # Thin CLI layer - delegates to LintOrchestrator
+            orchestrator = LintOrchestrator()
+            
+            # List rules and exit if requested
+            if args.list_rules:
+                print("\n📋 Available Linting Rules\n" + "-" * 60)
+                for rule in orchestrator.list_rules():
+                    print(f"  {rule['id']}")
+                    print(f"      {rule['description']}")
+                    print(f"      Category: {rule['category']}, Default: {rule['default_severity']}\n")
+                return
+            
+            # Load and configure linting
+            try:
+                lint_config = load_lint_config(args.config) if args.config else load_lint_config()
+                if args.fail_on_warn:
+                    lint_config.fail_on_warn = True
+                    
+                # Apply CLI rule overrides
+                if getattr(args, 'rule_overrides', None):
+                    from mcpscanner.core.schema_linting.rule_base import RuleConfig, Severity
+                    for override in args.rule_overrides:
+                        if ':' in override:
+                            rule_id, sev = override.rsplit(':', 1)
+                            lint_config.rules[rule_id] = RuleConfig(
+                                severity=Severity.from_string(sev),
+                                enabled=(sev.lower() != 'off')
+                            )
+            except Exception as e:
+                print(f"Error loading configuration: {e}", file=sys.stderr)
+                sys.exit(1)
+            
+            # Validate input
+            has_files = args.files and len(args.files) > 0
+            has_server = getattr(args, 'server_url', None)
+            if not (has_files or has_server):
+                print("Error: No input specified", file=sys.stderr)
+                print("Usage: mcp-scanner lint FILE [FILE ...]", file=sys.stderr)
+                print("       mcp-scanner lint --server-url URL", file=sys.stderr)
+                sys.exit(1)
+            
+            # Run linting via orchestrator
+            options = LintOptions(
+                files=args.files if has_files else None,
+                server_url=args.server_url if has_server else None,
+                bearer_token=getattr(args, 'lint_bearer_token', None),
+                config=lint_config,
+                verbose=args.verbose,
+                log=print if args.verbose else None,
+            )
+            results = await orchestrator.run(options)
+            
+            # Format and output results
+            use_color = not args.no_color and sys.stdout.isatty()
+            if args.format == "json":
+                print(JsonFormatter(pretty=True).format_multiple(results))
+            elif args.format == "table":
+                print(TableFormatter(use_color=use_color).format_multiple(results, verbose=args.verbose))
+            else:
+                print(TextFormatter(use_color=use_color).format_multiple(results, verbose=args.verbose))
+            
+            # Exit code
+            if orchestrator.has_errors(results):
+                sys.exit(1)
+            if args.fail_on_warn and orchestrator.has_warnings(results):
+                sys.exit(1)
+            return
+        
         # Handle static file scanning subcommand (matches 'prompts' and 'resources' pattern)
-        if args.cmd == "static":
+        elif args.cmd == "static":
             
             cfg = _build_config(selected_analyzers)
             

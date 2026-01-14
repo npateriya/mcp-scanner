@@ -1,0 +1,65 @@
+{
+  "tools": [
+    {
+      "name": "run",
+      "description": "TODO: add description",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["fast", "slow", "fast"]
+          },
+          "count": {
+            "enum": [1, "two", 3]
+          },
+          "config": {}
+        },
+        "required": ["mode", "missing_prop"]
+      }
+    },
+    {
+      "name": "run",
+      "description": "Duplicate name test"
+    },
+    {
+      "name": "ab",
+      "description": "Name too short"
+    },
+    {
+      "name": "this_is_a_very_long_tool_name_that_exceeds_reasonable_length_limits_and_should_be_flagged",
+      "description": "Long name test"
+    },
+    {
+      "name": "data_processor",
+      "description": "<b>HTML in description</b> should be flagged"
+    }
+  ],
+  "prompts": [
+    {
+      "name": "test_prompt",
+      "description": "A test prompt",
+      "arguments": [
+        {"name": "arg1"},
+        {"name": "arg1", "description": "Duplicate arg"}
+      ],
+      "required": ["nonexistent"]
+    },
+    {
+      "name": "test_prompt",
+      "description": "Duplicate prompt name"
+    }
+  ],
+  "resources": [
+    {
+      "name": "test_resource",
+      "uri": "file:///data/{}/invalid.txt"
+    },
+    {
+      "name": "test_resource",
+      "uri": "file:///data/{id}.txt",
+      "description": "Duplicate resource name"
+    }
+  ]
+}
+

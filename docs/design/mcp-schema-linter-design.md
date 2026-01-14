@@ -1,9 +1,10 @@
 # MCP Schema Linter - Design Document
 
-> **Status:** Draft  
+> **Status:** ✅ Phase 1 Implemented  
 > **Author:** @npateriya  
 > **Created:** 2026-01-13  
-> **Target Release:** 4.2.0  
+> **Last Updated:** 2026-01-14  
+> **Release:** 4.2.0  
 
 ---
 
@@ -222,34 +223,37 @@ mcp-scanner validate --tools tools.json  # Runs lint + security scan
 
 ## Input Sources
 
-The linter supports **all input sources** that the existing security scanner supports. This is achieved by reusing the existing MCP client infrastructure.
+### Implemented Input Sources ✅
 
-### Supported Input Sources
+| Input Source | CLI Option | Description | Status |
+|--------------|------------|-------------|--------|
+| **Static JSON/YAML Files** | `[FILES...]` | Load from local files | ✅ Implemented |
+| **Live MCP Server** | `--server-url URL` | Connect to HTTP MCP server | ✅ Implemented |
 
-| Input Source | CLI Option | Description |
-|--------------|------------|-------------|
-| **Live MCP Server** | `--server-url URL` | Connect to running SSE/HTTP MCP server |
-| **Static JSON Files** | `--tools PATH` | Load from pre-generated JSON files |
-| **Stdio MCP Server** | `--stdio-command CMD` | Launch and query stdio-based server |
-| **Known Configs** | `--scan-known-configs` | Scan Claude, Cursor, and other known configs |
+### TODO Input Sources 📋
+
+| Input Source | CLI Option | Description | Status |
+|--------------|------------|-------------|--------|
+| **Stdio MCP Server** | `--stdio-command CMD` | Launch and query stdio-based server | 📋 TODO |
+| **Known Configs** | `--scan-known-configs` | Scan Claude, Cursor, and other known configs | 📋 TODO |
 
 ### Examples by Input Source
 
 ```bash
-# 1. Live MCP server (SSE/HTTP)
-mcp-scanner lint --server-url http://localhost:8000/mcp
+# 1. Static JSON files (IMPLEMENTED)
+mcp-scanner lint tools.json prompts.json resources.json
 
-# 2. Static JSON files
-mcp-scanner lint --tools tools.json --prompts prompts.json
+# 2. Live MCP server (IMPLEMENTED)
+mcp-scanner lint --server-url https://mcp.deepwiki.com/mcp
 
-# 3. Stdio MCP server
-mcp-scanner lint --stdio-command "npx" --stdio-args "@modelcontextprotocol/server-filesystem"
+# 3. Stdio MCP server (TODO - Phase 2)
+# mcp-scanner lint --stdio-command "npx" --stdio-args "@modelcontextprotocol/server-filesystem"
 
-# 4. Known configs (Claude, Cursor, etc.)
-mcp-scanner lint --scan-known-configs
+# 4. Known configs (TODO - Phase 2)
+# mcp-scanner lint --scan-known-configs
 
-# 5. With LLM quality checks (any source)
-mcp-scanner lint --llm --server-url http://localhost:8000/mcp
+# 5. With LLM quality checks (TODO - Phase 2)
+# mcp-scanner lint --llm --server-url http://localhost:8000/mcp
 ```
 
 ### Infrastructure Reuse
@@ -392,7 +396,7 @@ class Rule(ABC):
 
 ---
 
-## LLM-Powered Quality Checks
+## LLM-Powered Quality Checks 📋 TODO (Phase 2)
 
 ### Static Rules vs LLM Checks
 
@@ -556,51 +560,72 @@ ignore:
 
 ---
 
-## Built-in Rules
+## Built-in Rules (37 Total)
 
-### Tool Rules
+### Tool Rules (22 rules)
 
 | Rule ID | Default | Description |
 |---------|---------|-------------|
 | `tool-description-required` | error | Tool must have a description |
 | `tool-description-min-length` | warn | Description ≥ 20 characters |
-| `tool-input-schema-required` | error | Tool must have inputSchema |
-| `tool-input-schema-valid` | error | inputSchema must be valid JSON Schema |
-| `tool-properties-described` | warn | Input properties should have descriptions |
-| `tool-name-casing` | warn | Tool name should follow convention |
-| `tool-name-no-reserved` | error | Name shouldn't use reserved words |
-| `tool-no-duplicate-names` | error | Tool names must be unique |
+| `tool-description-max-length` | warn | Description ≤ 500 characters |
+| `tool-description-no-placeholder` | warn | No placeholder text (TODO, TBD) |
+| `tool-name-casing` | warn | Name should follow convention |
+| `tool-name-min-length` | warn | Name ≥ 3 characters |
+| `tool-name-max-length` | warn | Name ≤ 64 characters |
+| `tool-name-action-verb` | info | Name should start with action verb |
+| `tool-name-no-generic` | info | Avoid generic names (process, handle) |
+| `tool-name-no-reserved` | error | Avoid reserved words |
+| `tool-no-duplicate-names` | error | Names must be unique |
+| `tool-input-schema-required` | error | Must have inputSchema |
+| `tool-input-schema-properties` | warn | inputSchema should have properties |
+| `tool-required-properties-exist` | error | Required properties must be defined |
+| `tool-property-type-defined` | warn | Properties should have types |
+| `tool-schema-no-empty-object` | warn | Avoid empty object schemas |
+| `tool-enum-type-consistent` | error | Enum values must match type |
+| `tool-enum-no-duplicates` | error | Enum values must be unique |
+| `tool-additional-properties-explicit` | info | Explicitly set additionalProperties |
+| `tool-schema-has-examples` | warn | Properties should have examples |
+| `tool-output-schema-defined` | hint | Define outputSchema |
+| `tool-output-schema-properties` | warn | outputSchema should have properties |
 
-### Prompt Rules
+### Prompt Rules (7 rules)
 
 | Rule ID | Default | Description |
 |---------|---------|-------------|
 | `prompt-description-required` | error | Prompt must have a description |
-| `prompt-arguments-described` | warn | Arguments should have descriptions |
-| `prompt-name-casing` | warn | Prompt name should follow convention |
+| `prompt-name-casing` | warn | Name should follow convention |
+| `prompt-arguments-description` | warn | Arguments should have descriptions |
+| `prompt-argument-type-defined` | warn | Arguments should have types |
+| `prompt-required-arguments-exist` | error | Required arguments must be defined |
+| `prompt-no-duplicate-names` | error | Prompt names must be unique |
+| `prompt-no-duplicate-arguments` | error | Argument names must be unique |
 
-### Resource Rules
+### Resource Rules (6 rules)
 
 | Rule ID | Default | Description |
 |---------|---------|-------------|
 | `resource-description-required` | warn | Resource should have description |
-| `resource-uri-valid` | error | URI must be valid format |
 | `resource-mime-type` | warn | Should specify mimeType |
+| `resource-uri-valid` | error | URI must have valid scheme |
+| `resource-uri-template-valid` | warn | URI template syntax must be valid |
+| `resource-no-duplicate-names` | error | Resource names must be unique |
+| `resource-name-casing` | warn | Name should follow convention |
 
-### General Rules
+### General Rules (2 rules)
 
 | Rule ID | Default | Description |
 |---------|---------|-------------|
 | `no-empty-arrays` | warn | tools/prompts/resources shouldn't be empty |
-| `valid-json` | error | Input must be valid JSON |
+| `description-no-html` | warn | Descriptions shouldn't contain HTML |
 
 ---
 
 ## Extensibility Model
 
-### Phase 1: Configuration Only
+### Phase 1: Configuration Only ✅ IMPLEMENTED
 
-Users can only enable/disable/configure built-in rules.
+Users can enable/disable/configure built-in rules via `.mcp-lint.yaml`:
 
 ```yaml
 rules:
@@ -608,9 +633,22 @@ rules:
     severity: error
     options:
       min: 100
+  
+  # Disable a rule
+  tool-output-schema-defined: off
+  
+  # Override via CLI
+  # mcp-scanner lint --rule "tool-name-casing:off" tools.json
 ```
 
-### Phase 2: Custom Rules (YAML-defined)
+**Implemented features:**
+- ✅ Enable/disable rules
+- ✅ Change severity (error, warn, info, hint, off)
+- ✅ Customize options (min, max, convention, etc.)
+- ✅ CLI `--rule` overrides
+- ✅ Config validation with fuzzy suggestions
+
+### Phase 2: Custom Rules (YAML-defined) 📋 TODO
 
 Users can define simple custom rules:
 
@@ -626,13 +664,13 @@ rules:
     message: "Tool name must start with 'mycompany_'"
 ```
 
-### Phase 3: Plugin Functions (Python)
+### Phase 3: Plugin Functions (Python) 📋 TODO
 
 Users can define complex logic in Python:
 
 ```python
 # ./custom-checks.py
-from mcpscanner.linter import register_check
+from mcpscanner.core.schema_linting import register_check
 
 @register_check("validate-api-version")
 def validate_api_version(value, options, context):
@@ -656,80 +694,64 @@ rules:
 
 ---
 
-## CLI Interface
+## CLI Interface ✅ IMPLEMENTED
 
 ### Primary Command
 
 ```bash
-mcp-scanner lint [OPTIONS]
+mcp-scanner lint [OPTIONS] [FILES...]
 ```
 
-### Input Source Options (Pick One)
-
-| Option | Description |
-|--------|-------------|
-| `--server-url URL` | Lint tools from live MCP server (SSE/HTTP) |
-| `--tools PATH` | Lint from static tools JSON file |
-| `--prompts PATH` | Lint from static prompts JSON file |
-| `--resources PATH` | Lint from static resources JSON file |
-| `--stdio-command CMD` | Lint from stdio MCP server |
-| `--stdio-args ARGS` | Arguments for stdio command |
-| `--scan-known-configs` | Lint all known MCP configs (Claude, Cursor, etc.) |
-| `--config-path PATH` | Path to specific MCP config file |
-
-### Linter Options
+### Implemented Options (10 total)
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--ruleset NAME` | Built-in ruleset to use | `mcp:recommended` |
+| `FILES` | One or more JSON/YAML files to lint | - |
+| `--server-url URL` | Lint tools from live MCP server (HTTP) | - |
 | `--config PATH` | Path to `.mcp-lint.yaml` config file | `.mcp-lint.yaml` |
-| `--format FORMAT` | Output format (stylish, json, summary) | `stylish` |
-| `--fail-on SEVERITY` | Exit non-zero if severity found | `error` |
+| `--format FORMAT` | Output format (table, text, json) | `table` |
 | `--rule RULE:SEVERITY` | Override rule severity | - |
-| `--list-rules` | List all available rules | - |
+| `--fail-on-warn` | Exit non-zero if warnings found | `false` |
+| `--no-color` | Disable colored output | `false` |
+| `-v, --verbose` | Show individual occurrences (with table) | `false` |
+| `--list-rules` | List all available rules and exit | - |
 
-### LLM Options
+### TODO Options (Phase 2+)
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--llm` | Enable LLM-powered quality checks | `false` |
-
-### Authentication Options (Inherited)
-
-| Option | Description |
-|--------|-------------|
-| `--bearer-token TOKEN` | Bearer token for authenticated servers |
-| `--header KEY:VALUE` | Custom header for MCP Gateway |
+| Option | Description | Status |
+|--------|-------------|--------|
+| `--llm` | Enable LLM-powered quality checks | 📋 TODO |
+| `--stdio-command CMD` | Lint from stdio MCP server | 📋 TODO |
+| `--stdio-args ARGS` | Arguments for stdio command | 📋 TODO |
+| `--scan-known-configs` | Lint all known MCP configs | 📋 TODO |
+| `--ruleset NAME` | Built-in ruleset to use | 📋 TODO |
 
 ### Examples
 
 ```bash
-# Lint live MCP server
-mcp-scanner lint --server-url http://localhost:8000/mcp
+# Lint local JSON files
+mcp-scanner lint tools.json prompts.json
 
-# Lint static JSON files
-mcp-scanner lint --tools tools.json --prompts prompts.json
+# Lint live MCP server (e.g., DeepWiki)
+mcp-scanner lint --server-url https://mcp.deepwiki.com/mcp
 
-# Lint stdio MCP server
-mcp-scanner lint --stdio-command "npx" --stdio-args "@modelcontextprotocol/server-filesystem"
+# Verbose output with individual occurrences
+mcp-scanner lint --server-url https://mcp.deepwiki.com/mcp -v
 
-# Lint all known configs
-mcp-scanner lint --scan-known-configs
+# Text format (detailed)
+mcp-scanner lint --format text tools.json
 
-# Lint with LLM quality checks
-mcp-scanner lint --llm --server-url http://localhost:8000/mcp
+# JSON format (for CI/CD)
+mcp-scanner lint --format json tools.json
 
 # Lint with custom config
-mcp-scanner lint --config ./config/strict.yaml --tools tools.json
+mcp-scanner lint --config ./config/strict.yaml tools.json
 
-# CI mode (fail on any error, JSON output)
-mcp-scanner lint --fail-on error --format json --tools tools.json
+# CI mode (fail on any warning)
+mcp-scanner lint --fail-on-warn --format json tools.json
 
 # Override rule via CLI
-mcp-scanner lint --rule "tool-description-min-length:off" --tools tools.json
-
-# Lint authenticated server
-mcp-scanner lint --server-url https://api.example.com/mcp --bearer-token "$TOKEN"
+mcp-scanner lint --rule "tool-description-min-length:off" tools.json
 
 # List all available rules
 mcp-scanner lint --list-rules
@@ -739,60 +761,97 @@ mcp-scanner lint --list-rules
 
 | Code | Meaning |
 |------|---------|
-| 0 | No findings at or above fail-on threshold |
-| 1 | Findings at or above fail-on threshold |
+| 0 | No errors found (warnings allowed unless `--fail-on-warn`) |
+| 1 | Errors found, or warnings with `--fail-on-warn` |
 | 2 | Invalid input or configuration error |
 
 ---
 
-## Output Formats
+## Output Formats ✅ IMPLEMENTED
 
-### Stylish (Default)
+### Table (Default)
 
-Human-readable terminal output:
+Grouped summary format, similar to [api-insights-cli](https://github.com/CiscoDevNet/api-insights-cli):
 
 ```
-tools.json
-  1:3   error    Tool "get_data" missing description           tool-description-required
-  2:5   warning  Input property "query" missing description    tool-properties-described
-  3:3   warning  Tool "fetch" missing output schema           tool-output-schema
+🔍 Linting: tools.json
 
-✖ 3 problems (1 error, 2 warnings)
+Tool Quality
+SEVERITY   CODE                              FINDINGS                                RECOMMENDATION                              AFFECTED
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+warn       tool-schema-has-examples          Schema properties lack examples         Add 'example' to schema properties              5
+hint       tool-output-schema-defined        No output schema defined                Add outputSchema for predictable results        5
+
+Summary by Category
+CATEGORY   ERROR   WARN   INFO   HINT
+────────────────────────────────────────
+Tool           0      5      0      5
+
+============================================================
+📊 Summary
+  Rules checked: 37
+  Rules passed:  35 (94%)
+  Rules failed:  2
+  Total issues:  10
+```
+
+With `-v` (verbose), shows individual occurrences:
+
+```
+warn       tool-schema-has-examples          Schema properties lack examples         Add 'example' to schema properties              5
+             └─ tools[0].inputSchema.properties.query: Add 'example' to property 'query'
+             └─ tools[1].inputSchema.properties.path: Add 'example' to property 'path'
+```
+
+### Text
+
+Detailed human-readable output:
+
+```
+=== MCP Schema Linting Results ===
+
+Source: tools.json
+
+  ⚠ warn  tool-description-min-length
+    Path: tools[0].description
+    Tool description should be at least 20 characters for clarity
+    
+  ℹ hint  tool-output-schema-defined
+    Path: tools[0]
+    Tool 'search' has no outputSchema - consider adding one
+
+────────────────────────────────────────
+Summary: 0 errors, 1 warning, 0 info, 1 hint
 ```
 
 ### JSON
 
-Machine-readable output:
+Machine-readable output for CI/CD pipelines:
 
 ```json
 {
+  "source": "tools.json",
   "findings": [
     {
-      "rule_id": "tool-description-required",
-      "severity": "error",
-      "message": "Tool \"get_data\" missing description",
-      "path": "tools[0]",
-      "file": "tools.json"
+      "rule_id": "tool-description-min-length",
+      "severity": "warn",
+      "message": "Tool description should be at least 20 characters",
+      "path": "tools[0].description",
+      "line": null,
+      "column": null
     }
   ],
   "summary": {
-    "total": 3,
-    "errors": 1,
-    "warnings": 2,
-    "info": 0
+    "total": 1,
+    "errors": 0,
+    "warnings": 1,
+    "info": 0,
+    "hints": 0
   }
 }
 ```
 
-### Summary
-
-Brief summary only:
-
-```
-✖ 3 problems (1 error, 2 warnings, 0 info)
-```
-
-### SARIF (Phase 2)
+### SARIF 📋 TODO (Phase 2)
 
 GitHub Code Scanning compatible format.
 
@@ -800,31 +859,52 @@ GitHub Code Scanning compatible format.
 
 ## Implementation Phases
 
-### Phase 1: MVP (Target: 1 week)
+### Phase 1: MVP ✅ COMPLETE
 
-**Scope:**
-- 15 built-in static rules (hardcoded)
-- YAML config for enable/disable/severity
-- Basic options support (minLength, pattern)
-- CLI `lint` subcommand
-- All input sources (reuse existing MCP client infrastructure)
-- 3 output formats (stylish, JSON, summary)
-- Tests
+**Implemented:**
+- ✅ **37 built-in static rules** (tools, prompts, resources, general)
+- ✅ YAML config for enable/disable/severity (`.mcp-lint.yaml`)
+- ✅ Options support (minLength, maxLength, pattern, convention, etc.)
+- ✅ CLI `lint` subcommand with 10 arguments
+- ✅ Input sources: local files, HTTP servers
+- ✅ **3 output formats:** table (default), text, JSON
+- ✅ Config validation with fuzzy suggestions for unknown rules
+- ✅ Separated infrastructure errors from linting findings
+- ✅ LintOrchestrator for clean architecture
+- ✅ 76 unit tests passing
+- ✅ Documentation (`docs/schema-linting.md`)
 
-**Deliverables:**
-- `mcpscanner/linter/` module
-- `mcp-scanner lint` command
-- `.mcp-lint.yaml` config support
-- Documentation
+**Actual Lines of Code:** ~2,500
 
-**Key Implementation Notes:**
-- Reuse existing `scanner.py` for MCP connections
-- Reuse existing config parsing for known configs
-- Reuse existing stdio handling
+**Files Created:**
+```
+mcpscanner/core/schema_linting/
+├── __init__.py              # Public API exports
+├── linter.py                # SchemaLinter, LintConfig, LintResult
+├── rule_base.py             # Finding, Rule, Severity, RuleConfig
+├── path_resolver.py         # Helpers for JSON path navigation
+├── rule_loader.py           # Load .mcp-lint.yaml configs
+├── orchestrator.py          # LintOrchestrator for CLI
+├── rules/
+│   ├── __init__.py
+│   ├── registry.py          # Rule registry
+│   └── builtin/
+│       ├── __init__.py
+│       ├── tool_rules.py            # Re-exports (split files)
+│       ├── tool_rules_basic.py      # 9 rules
+│       ├── tool_rules_schema.py     # 10 rules
+│       ├── tool_rules_docs.py       # 3 rules
+│       ├── prompt_rules.py          # 7 rules
+│       ├── resource_rules.py        # 6 rules
+│       └── general_rules.py         # 2 rules
+└── formatters/
+    ├── __init__.py
+    ├── text.py              # Detailed text output
+    ├── json_formatter.py    # Machine-readable JSON
+    └── table.py             # Grouped summary (api-insights style)
+```
 
-**Lines of Code Estimate:** ~800-1,200
-
-### Phase 2: LLM + Extensibility (Target: +2 weeks)
+### Phase 2: LLM + Extensibility 📋 TODO
 
 **Scope:**
 - `--llm` flag for LLM-powered quality checks
@@ -840,100 +920,104 @@ GitHub Code Scanning compatible format.
 - `llm-name-description-coherence` - Do name and description align?
 - `llm-schema-description-coherence` - Does schema match description?
 
-**Lines of Code Estimate:** ~500-800 additional
+**Estimated Lines of Code:** ~500-800 additional
 
-### Phase 3: Advanced (Target: +3 weeks)
+### Phase 3: Advanced 📋 TODO
 
 **Scope:**
 - Python plugin functions
 - Full JSONPath support
+- Dynamic ruleset loading
 - Auto-fix for select rules
 - Watch mode
 - IDE integration helpers
 - `validate` command (lint + security scan combined)
+- Stdio server input support
+- Known configs scanning
 
-**Lines of Code Estimate:** ~1,000-1,500 additional
+**Estimated Lines of Code:** ~1,000-1,500 additional
 
 ---
 
-## File Structure
+## File Structure ✅ ACTUAL IMPLEMENTATION
 
 ```
 mcpscanner/
-├── linter/
-│   ├── __init__.py              # Public API exports
-│   ├── engine.py                # Core linting engine
-│   ├── config.py                # Config loading and merging
-│   ├── finding.py               # Finding dataclass
-│   │
-│   ├── rules/
-│   │   ├── __init__.py          # Rule registry
-│   │   ├── base.py              # Base Rule class
-│   │   ├── tool_rules.py        # Tool-related rules
-│   │   ├── prompt_rules.py      # Prompt-related rules
-│   │   ├── resource_rules.py    # Resource-related rules
-│   │   └── general_rules.py     # Cross-cutting rules
-│   │
-│   ├── rulesets/
-│   │   ├── recommended.yaml     # Default ruleset
-│   │   ├── strict.yaml          # Strict ruleset (Phase 2)
-│   │   └── security.yaml        # Security-focused (Phase 2)
-│   │
-│   └── formatters/
-│       ├── __init__.py
-│       ├── stylish.py           # Terminal formatter
-│       ├── json_formatter.py    # JSON formatter
-│       └── summary.py           # Summary formatter
+├── core/
+│   └── schema_linting/
+│       ├── __init__.py              # Public API exports (clean interface)
+│       ├── linter.py                # SchemaLinter, LintConfig, LintResult
+│       ├── rule_base.py             # Finding, Rule, Severity, RuleConfig
+│       ├── path_resolver.py         # get_items(), build_item_path() helpers
+│       ├── rule_loader.py           # load_config() for .mcp-lint.yaml
+│       ├── orchestrator.py          # LintOrchestrator (CLI handler logic)
+│       │
+│       ├── rules/
+│       │   ├── __init__.py          # Rule exports
+│       │   ├── registry.py          # RuleRegistry, get_default_registry()
+│       │   └── builtin/
+│       │       ├── __init__.py      # Imports all builtin rules
+│       │       ├── tool_rules.py    # Re-exports from split files
+│       │       ├── tool_rules_basic.py    # 9 rules (naming, description)
+│       │       ├── tool_rules_schema.py   # 10 rules (inputSchema, outputSchema)
+│       │       ├── tool_rules_docs.py     # 3 rules (examples, placeholders)
+│       │       ├── prompt_rules.py        # 7 rules
+│       │       ├── resource_rules.py      # 6 rules
+│       │       └── general_rules.py       # 2 rules
+│       │
+│       └── formatters/
+│           ├── __init__.py
+│           ├── text.py              # Detailed text output
+│           ├── json_formatter.py    # Machine-readable JSON
+│           └── table.py             # Grouped summary (api-insights style)
 │
-├── cli.py                       # Add 'lint' subcommand
+├── data/
+│   └── rulesets/
+│       └── mcp-recommended.yaml     # Default ruleset config
+│
+├── cli.py                           # lint subcommand integration
 │
 tests/
-├── linter/
-│   ├── test_engine.py
-│   ├── test_config.py
-│   ├── test_rules/
-│   │   ├── test_tool_rules.py
-│   │   ├── test_prompt_rules.py
-│   │   └── test_resource_rules.py
-│   └── test_formatters.py
+├── test_schema_linting.py           # 76 tests for all rules
+│
+docs/
+├── schema-linting.md                # User documentation
+└── design/
+    └── mcp-schema-linter-design.md  # This document
 ```
 
 ---
 
-## Testing Strategy
+## Testing Strategy ✅ IMPLEMENTED
 
-### Unit Tests
+### Unit Tests (76 tests passing)
 
-- Each rule has dedicated tests
-- Config loading edge cases
-- Formatter output verification
+- ✅ Each rule has dedicated tests (positive and negative)
+- ✅ Config loading and validation
+- ✅ Formatter output verification
+- ✅ Error handling (file not found, invalid JSON, connection errors)
+- ✅ LintResult factory methods
 
-### Integration Tests
-
-- End-to-end CLI tests
-- Config file resolution
-- Multiple file handling
-
-### Test Fixtures
+### Test File
 
 ```
-tests/linter/fixtures/
-├── valid/
-│   ├── complete-tools.json      # Passes all rules
-│   └── minimal-valid.json       # Minimal valid definition
-├── invalid/
-│   ├── missing-description.json
-│   ├── empty-schema.json
-│   └── bad-naming.json
-└── configs/
-    ├── strict.yaml
-    └── relaxed.yaml
+tests/test_schema_linting.py    # 76 tests covering all 37 rules
 ```
 
-### Coverage Target
+### Sample Test Fixtures
 
-- 90%+ code coverage for linter module
-- All rules must have positive and negative test cases
+```
+examples/
+├── sample_tools_for_lint.json  # Various tool scenarios
+└── sample_for_new_rules.json   # Enterprise rule scenarios
+```
+
+### Test Coverage
+
+- ✅ All 37 rules have positive and negative test cases
+- ✅ Config validation with unknown rules
+- ✅ LintResult factory methods
+- ✅ Error separation (infrastructure vs findings)
 
 ---
 
@@ -979,18 +1063,21 @@ mcp-scanner lint --fix --tools tools.json
 
 ## Appendix A: Comparison with Spectral
 
-| Feature | Spectral | MCP Linter (MVP) | MCP Linter (Full) |
-|---------|----------|------------------|-------------------|
-| Built-in rules | ✅ | ✅ | ✅ |
+| Feature | Spectral | MCP Linter (Phase 1) | MCP Linter (Future) |
+|---------|----------|----------------------|---------------------|
+| Built-in rules | ✅ | ✅ 37 rules | ✅ |
 | YAML config | ✅ | ✅ | ✅ |
 | Enable/disable | ✅ | ✅ | ✅ |
 | Severity override | ✅ | ✅ | ✅ |
-| Custom rules | ✅ | ❌ | ✅ |
-| Extends | ✅ | ❌ | ✅ |
-| JSONPath | ✅ | ❌ | ✅ |
-| Custom functions | ✅ | ❌ | ✅ |
-| SARIF output | ✅ | ❌ | ✅ |
-| Auto-fix | ❌ | ❌ | ✅ |
+| Config validation | ✅ | ✅ with fuzzy match | ✅ |
+| Table output | ❌ | ✅ api-insights style | ✅ |
+| Custom rules | ✅ | ❌ | 📋 TODO |
+| Extends | ✅ | ❌ | 📋 TODO |
+| JSONPath | ✅ | ❌ | 📋 TODO |
+| Custom functions | ✅ | ❌ | 📋 TODO |
+| LLM quality checks | ❌ | ❌ | 📋 TODO |
+| SARIF output | ✅ | ❌ | 📋 TODO |
+| Auto-fix | ❌ | ❌ | 📋 TODO |
 
 ---
 
@@ -1041,101 +1128,82 @@ rules:
 
 - **What:** Schema linter for MCP tool/prompt/resource definitions
 - **Why:** Validate quality/completeness (complements security scanning)
-- **How:** Rules-based validation with YAML configuration + optional LLM checks
-- **Inspiration:** Spectral for OpenAPI
-- **Input Sources:** Live servers, static JSON, stdio servers, known configs (reuses existing infrastructure)
+- **How:** Rules-based validation with YAML configuration
+- **Inspiration:** Spectral for OpenAPI, Cisco API Insights
+- **Status:** Phase 1 complete, Phase 2 (LLM) TODO
 
-### Key Design Decisions
+### What's Implemented ✅
 
-1. **Rules are classes** with `check()` method returning `Finding` objects
+1. **37 built-in static rules** covering tools, prompts, resources, general
 2. **Config is YAML** - `.mcp-lint.yaml` in project root
 3. **Severity levels:** error, warn, info, hint, off
-4. **MVP has 15 built-in static rules** - no custom rules yet
-5. **Three formatters:** stylish (terminal), JSON, summary
-6. **All input sources supported** - reuse existing MCP client infrastructure
-7. **Optional LLM checks** via `--llm` flag - reuses existing LLM infrastructure
-8. **LLM checks complement static rules** - semantic quality vs structural checks
+4. **Three formatters:** table (default), text, JSON
+5. **Input sources:** Local files, HTTP servers
+6. **Config validation** with fuzzy suggestions for unknown rules
+7. **Clean architecture:** LintOrchestrator separates CLI from logic
+8. **Error separation:** Infrastructure errors vs linting findings
 
-### Two Modes of Operation
+### What's TODO 📋
 
-| Mode | Flag | Checks | Cost |
-|------|------|--------|------|
-| Static only | (default) | Structural rules | Free |
-| Static + LLM | `--llm` | Structural + semantic | API costs |
+1. **LLM quality checks** via `--llm` flag
+2. **Dynamic rulesets** - `extends`, custom YAML rules
+3. **Stdio server** input support
+4. **Known configs** scanning
+5. **SARIF output** for GitHub integration
+6. **Python plugin** functions for custom rules
 
-### Implementation Starting Points
+### Key Files
 
-1. **Reuse existing code:**
-   - `mcpscanner/core/scanner.py` - MCP client connections
-   - `mcpscanner/core/analyzers/llm_analyzer.py` - LLM infrastructure
-   - `mcpscanner/cli.py` - CLI patterns
+| File | Purpose |
+|------|---------|
+| `mcpscanner/core/schema_linting/__init__.py` | Public API exports |
+| `mcpscanner/core/schema_linting/linter.py` | SchemaLinter, LintResult |
+| `mcpscanner/core/schema_linting/orchestrator.py` | LintOrchestrator (CLI logic) |
+| `mcpscanner/core/schema_linting/rules/builtin/` | All 37 rules |
+| `mcpscanner/core/schema_linting/formatters/` | text, json, table |
+| `tests/test_schema_linting.py` | 76 unit tests |
+| `docs/schema-linting.md` | User documentation |
 
-2. **New linter module:**
-   - `mcpscanner/linter/engine.py` - core linting loop
-   - `mcpscanner/linter/rules/` - one file per category
-   - `mcpscanner/linter/formatters/` - output formatters
-
-3. **CLI integration:**
-   - Add `lint` subcommand to `mcpscanner/cli.py`
-   - Support all existing input source options
-   - Add `--llm` flag for LLM quality checks
-
-4. **Test fixtures:**
-   - `tests/linter/fixtures/` - valid and invalid examples
-
-### Input Sources (Reuse Existing)
+### Architecture Pattern
 
 ```python
-# Conceptual - reuse existing code
-async def lint(config: LintConfig) -> list[Finding]:
-    # Step 1: Get definitions (REUSE existing infrastructure)
-    if config.server_url:
-        tools = await fetch_from_server(config.server_url)  # Existing
-    elif config.tools_file:
-        tools = load_from_json(config.tools_file)           # Existing  
-    elif config.stdio_command:
-        tools = await fetch_from_stdio(config.stdio_command) # Existing
-    elif config.scan_known_configs:
-        tools = await scan_known_configs()                   # Existing
-    
-    # Step 2: Run static rules (NEW)
-    findings = linter_engine.lint(tools, config)
-    
-    # Step 3: Run LLM checks if --llm (NEW, reuses LLM client)
-    if config.llm:
-        findings.extend(await llm_quality_checks(tools, config))
-    
-    return findings
+# Clean single import in cli.py
+from mcpscanner.core.schema_linting import (
+    SchemaLinter, LintConfig, load_lint_config,
+    TextFormatter, JsonFormatter, TableFormatter,
+    LintOrchestrator, LintOptions,
+)
+
+# CLI handler delegates to orchestrator
+async def handle_lint(args):
+    options = LintOptions(
+        files=args.files,
+        server_url=args.server_url,
+        config_path=args.config,
+        output_format=args.format,
+        verbose=args.verbose,
+        # ...
+    )
+    orchestrator = LintOrchestrator(options)
+    return await orchestrator.run()
 ```
-
-### LLM Quality Checks (Phase 2)
-
-Reuse existing LLM infrastructure with different prompts:
-
-| Existing (Security) | New (Quality) |
-|---------------------|---------------|
-| "Is this malicious?" | "Is this well-documented?" |
-| Finds threats | Finds quality issues |
-| `--analyzers llm` | `lint --llm` |
 
 ### Code Style
 
 - Follow existing mcp-scanner patterns
 - Use dataclasses for data structures
 - Type hints required
-- Docstrings for all public APIs
-- Reuse existing code wherever possible
+- Single public interface via `__init__.py`
+- Factory methods for common error types
 
-### Files to Reference
+### Files to Reference for Future Work
 
-- `mcpscanner/cli.py` - CLI structure, subcommand patterns
-- `mcpscanner/core/scanner.py` - MCP client connections
-- `mcpscanner/core/analyzers/llm_analyzer.py` - LLM infrastructure
-- `mcpscanner/core/analyzers/static_analyzer.py` - Static analysis patterns
+- `mcpscanner/core/analyzers/llm_analyzer.py` - LLM infrastructure (for Phase 2)
+- `mcpscanner/core/scanner.py` - MCP client connections (for stdio/known-configs)
 - `mcpscanner/config/config.py` - Configuration handling
 
 ---
 
-*Document Version: 1.1*  
-*Last Updated: 2026-01-13*
+*Document Version: 2.0*  
+*Last Updated: 2026-01-14*
 

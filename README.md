@@ -18,6 +18,7 @@ The SDK is designed to be easy to use while providing powerful scanning capabili
 - **Comprehensive Scanning**: Scan MCP tools, prompts, resources, and server instructions for security findings
 - **Behavioural Code Scanning**: Scan Source code of MCP servers for finding threats.
 - **Static/Offline Scanning**: Scan pre-generated JSON files without live server connections - perfect for CI/CD pipelines and air-gapped environments
+- **Schema Linting**: Spectral-like quality checks for MCP definitions - validate descriptions, naming conventions, examples, and best practices
 - **Explicit Authentication Control**: Fine-grained control over authentication with explicit Auth parameters.
 - **OAuth Support**: Full OAuth authentication support for both SSE and streamable HTTP connections.
 - **Custom Endpoints**: Configure the API endpoint to support any Cisco AI Defense environments.
@@ -200,6 +201,7 @@ asyncio.run(main())
 - **instructions**: scan server instructions from InitializeResult. Requires `--server-url`; optional `--bearer-token`.
 - **supplychain**: scan source code of a MCP server for Behavioural analysis. requires 'path of MCP Server source code or MCP Server source file'
 - **static**: scan pre-generated MCP JSON files offline (CI/CD mode). Supports `--tools`, `--prompts`, `--resources`, optional `--mime-types`.
+- **lint**: validate MCP definitions for quality and best practices. Supports local files or `--server-url` for live servers.
 
 Note: Top-level flags (e.g., `--server-url`, `--stdio-*`, `--config-path`, `--scan-known-configs`) remain supported when no subcommand is used, but subcommands are recommended.
 
@@ -401,6 +403,26 @@ mcp-scanner --analyzers yara --format summary static --tools output/tools.json
 
 For more details, see [Static Scanning Documentation](docs/static-scanning.md) and [examples/static_scanning_example.py](examples/static_scanning_example.py).
 
+#### Schema Linting (Quality Checks)
+
+The `lint` subcommand validates MCP definitions for quality and best practices—similar to [Spectral](https://stoplight.io/open-source/spectral) for OpenAPI.
+
+```bash
+# Lint a local JSON file
+mcp-scanner lint tools.json
+
+# Lint a remote MCP server (e.g., DeepWiki)
+mcp-scanner lint --server-url https://mcp.deepwiki.com/mcp
+
+# Verbose output with individual occurrences
+mcp-scanner lint --server-url https://mcp.deepwiki.com/mcp -v
+
+# List all available rules
+mcp-scanner lint --list-rules
+```
+
+For complete documentation, see [Schema Linting Documentation](docs/schema-linting.md).
+
 ### API Server Usage
 
 The API server provides a REST interface to the MCP scanner functionality, allowing you to integrate security scanning into web applications, CI/CD pipelines, or other services. It exposes the same scanning capabilities as the CLI tool but through HTTP endpoints.
@@ -500,6 +522,7 @@ For detailed documentation, see the [docs/](https://github.com/cisco-ai-defense/
 - **[Authentication](https://github.com/cisco-ai-defense/mcp-scanner/tree/main/docs/authentication.md)** - OAuth and security configuration
 - **[Programmatic Usage](https://github.com/cisco-ai-defense/mcp-scanner/tree/main/docs/programmatic-usage.md)** - Programmatic usage examples and advanced usage
 - **[Static Scanning](https://github.com/cisco-ai-defense/mcp-scanner/tree/main/docs/static-scanning.md)** - Offline/CI-CD scanning mode
+- **[Schema Linting](https://github.com/cisco-ai-defense/mcp-scanner/tree/main/docs/schema-linting.md)** - Spectral-like quality validation for MCP definitions
 - **[API Reference](https://github.com/cisco-ai-defense/mcp-scanner/tree/main/docs/api-reference.md)** - Complete REST API documentation
 - **[Output Formats](https://github.com/cisco-ai-defense/mcp-scanner/tree/main/docs/output-formats.md)** - Detailed output format options
 

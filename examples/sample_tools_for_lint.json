@@ -1,0 +1,66 @@
+{
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "Retrieves current weather information for a specified city including temperature, humidity, and conditions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "The city name to get weather for"
+          },
+          "units": {
+            "type": "string",
+            "enum": ["celsius", "fahrenheit"],
+            "description": "Temperature units"
+          }
+        },
+        "required": ["city"]
+      }
+    },
+    {
+      "name": "x",
+      "description": "",
+      "inputSchema": {}
+    },
+    {
+      "name": "BadlyNamedTool",
+      "description": "Short"
+    },
+    {
+      "name": "calculate_sum",
+      "description": "Calculates the sum of two numbers and returns the result.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "a": {"type": "number"},
+          "b": {"type": "number"}
+        },
+        "required": ["a", "b"]
+      }
+    },
+    {
+      "name": "test",
+      "description": "This tool is used for testing purposes only."
+    },
+    {
+      "name": "get_weather",
+      "description": "Duplicate tool name - this should trigger an error."
+    }
+  ],
+  "prompts": [],
+  "resources": [
+    {
+      "name": "config_file",
+      "uri": "invalid-uri-no-scheme",
+      "description": "A configuration file"
+    },
+    {
+      "name": "data_source",
+      "uri": "file:///data/source.json",
+      "mimeType": "application/json",
+      "description": "Main data source"
+    }
+  ]
+}

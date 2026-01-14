@@ -1,0 +1,62 @@
+# MCP Scanner - Recommended Linting Ruleset
+# 
+# This ruleset provides a balanced set of rules for validating
+# MCP tool, prompt, and resource definitions.
+#
+# Usage:
+#   Extend this ruleset in your .mcp-lint.yaml:
+#   extends: ["mcp:recommended"]
+#
+# Or reference directly:
+#   mcp-scanner lint --ruleset mcp:recommended
+
+# --- Tool Rules ---
+
+# Tools must have a description
+tool-description-required:
+  severity: error
+
+# Tool descriptions should be meaningful (at least 20 chars)
+tool-description-min-length:
+  severity: warn
+  options:
+    min: 20
+
+# Tool names should follow snake_case convention
+tool-name-casing:
+  severity: warn
+  options:
+    convention: snake_case  # Options: snake_case, camelCase, PascalCase, kebab-case
+
+# Tools should have an inputSchema defined
+tool-input-schema-required:
+  severity: warn
+
+# inputSchema should have proper structure
+tool-input-schema-properties:
+  severity: info
+  options:
+    require_property_descriptions: false
+
+# --- Prompt Rules ---
+
+# Prompts must have a description
+prompt-description-required:
+  severity: error
+
+# Prompt arguments should have descriptions
+prompt-arguments-description:
+  severity: warn
+
+# --- Resource Rules ---
+
+# Resources should have descriptions
+resource-description-required:
+  severity: warn
+
+# Resources should specify MIME type
+resource-mime-type:
+  severity: info
+  options:
+    validate_format: true
+
