@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from .linter import LintConfig
-from .rule_base import RuleConfig
+from .rule_base import RuleConfig, Severity
 
 
 # Try to import yaml, with fallback
@@ -90,32 +90,24 @@ def _load_yaml_config(path: Path) -> LintConfig:
 
 def _parse_config(data: dict) -> LintConfig:
     """Parse configuration dictionary into LintConfig."""
-    rules: dict[str, RuleConfig] = {}
-    
-    # Parse rule configurations
-    for rule_id, rule_data in data.get("rules", {}).items():
-        rules[rule_id] = RuleConfig.from_dict(rule_data)
+    # Use LintConfig.from_dict which handles dynamic rules
+    config = LintConfig.from_dict(data)
     
     # Handle extends
     extends = data.get("extends", [])
     if isinstance(extends, str):
         extends = [extends]
     
-    # Resolve extended rulesets
+    # Resolve extended rulesets and merge
     for ruleset in extends:
         resolved = resolve_ruleset(ruleset)
         # Merge with lower priority (explicit rules override)
         for rule_id, rule_config in resolved.items():
-            if rule_id not in rules:
-                rules[rule_id] = rule_config
+            if rule_id not in config.rules:
+                config.rules[rule_id] = rule_config
     
-    return LintConfig(
-        rules=rules,
-        extends=extends,
-        ignore_patterns=data.get("ignore", []),
-        fail_on_error=data.get("fail_on_error", True),
-        fail_on_warn=data.get("fail_on_warn", False),
-    )
+    config.extends = extends
+    return config
 
 
 def resolve_ruleset(ruleset_name: str) -> dict[str, RuleConfig]:
@@ -156,25 +148,25 @@ def _get_recommended_ruleset() -> dict[str, RuleConfig]:
     """Get the recommended ruleset configuration."""
     return {
         # Tool rules
-        "tool-description-required": RuleConfig(severity="error"),
+        "tool-description-required": RuleConfig(severity=Severity.ERROR),
         "tool-description-min-length": RuleConfig(
-            severity="warn",
+            severity=Severity.WARN,
             options={"min": 20}
         ),
         "tool-name-casing": RuleConfig(
-            severity="warn",
+            severity=Severity.WARN,
             options={"convention": "snake_case"}
         ),
-        "tool-input-schema-required": RuleConfig(severity="warn"),
-        "tool-input-schema-properties": RuleConfig(severity="info"),
+        "tool-input-schema-required": RuleConfig(severity=Severity.WARN),
+        "tool-input-schema-properties": RuleConfig(severity=Severity.INFO),
         
         # Prompt rules
-        "prompt-description-required": RuleConfig(severity="error"),
-        "prompt-arguments-description": RuleConfig(severity="warn"),
+        "prompt-description-required": RuleConfig(severity=Severity.ERROR),
+        "prompt-arguments-description": RuleConfig(severity=Severity.WARN),
         
         # Resource rules
-        "resource-description-required": RuleConfig(severity="warn"),
-        "resource-mime-type": RuleConfig(severity="info"),
+        "resource-description-required": RuleConfig(severity=Severity.WARN),
+        "resource-mime-type": RuleConfig(severity=Severity.INFO),
     }
 
 
@@ -182,28 +174,28 @@ def _get_strict_ruleset() -> dict[str, RuleConfig]:
     """Get the strict ruleset configuration."""
     return {
         # Tool rules - all errors
-        "tool-description-required": RuleConfig(severity="error"),
+        "tool-description-required": RuleConfig(severity=Severity.ERROR),
         "tool-description-min-length": RuleConfig(
-            severity="error",
+            severity=Severity.ERROR,
             options={"min": 30}
         ),
         "tool-name-casing": RuleConfig(
-            severity="error",
+            severity=Severity.ERROR,
             options={"convention": "snake_case"}
         ),
-        "tool-input-schema-required": RuleConfig(severity="error"),
+        "tool-input-schema-required": RuleConfig(severity=Severity.ERROR),
         "tool-input-schema-properties": RuleConfig(
-            severity="error",
+            severity=Severity.ERROR,
             options={"require_property_descriptions": True}
         ),
         
         # Prompt rules - all errors
-        "prompt-description-required": RuleConfig(severity="error"),
-        "prompt-arguments-description": RuleConfig(severity="error"),
+        "prompt-description-required": RuleConfig(severity=Severity.ERROR),
+        "prompt-arguments-description": RuleConfig(severity=Severity.ERROR),
         
         # Resource rules
-        "resource-description-required": RuleConfig(severity="error"),
-        "resource-mime-type": RuleConfig(severity="warn"),
+        "resource-description-required": RuleConfig(severity=Severity.ERROR),
+        "resource-mime-type": RuleConfig(severity=Severity.WARN),
     }
 
 
@@ -211,23 +203,23 @@ def _get_quality_ruleset() -> dict[str, RuleConfig]:
     """Get the quality-focused ruleset configuration."""
     return {
         # Focus on documentation quality
-        "tool-description-required": RuleConfig(severity="error"),
+        "tool-description-required": RuleConfig(severity=Severity.ERROR),
         "tool-description-min-length": RuleConfig(
-            severity="warn",
+            severity=Severity.WARN,
             options={"min": 50}  # Longer descriptions required
         ),
-        "tool-name-casing": RuleConfig(severity="info"),
-        "tool-input-schema-required": RuleConfig(severity="warn"),
+        "tool-name-casing": RuleConfig(severity=Severity.INFO),
+        "tool-input-schema-required": RuleConfig(severity=Severity.WARN),
         "tool-input-schema-properties": RuleConfig(
-            severity="warn",
+            severity=Severity.WARN,
             options={"require_property_descriptions": True}
         ),
         
-        "prompt-description-required": RuleConfig(severity="error"),
-        "prompt-arguments-description": RuleConfig(severity="error"),
+        "prompt-description-required": RuleConfig(severity=Severity.ERROR),
+        "prompt-arguments-description": RuleConfig(severity=Severity.ERROR),
         
-        "resource-description-required": RuleConfig(severity="error"),
-        "resource-mime-type": RuleConfig(severity="info"),
+        "resource-description-required": RuleConfig(severity=Severity.ERROR),
+        "resource-mime-type": RuleConfig(severity=Severity.INFO),
     }
 
 

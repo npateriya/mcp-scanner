@@ -1398,6 +1398,242 @@ class TestResourceNameCasing:
         assert len(findings) == 1
 
 
+class TestQueryPath:
+    """Tests for the query_path function."""
+    
+    def test_simple_path(self):
+        """Test simple path query."""
+        from mcpscanner.core.schema_linting.path_resolver import query_path
+        
+        data = {"tools": [{"name": "a"}, {"name": "b"}]}
+        matches = list(query_path(data, "tools[].name"))
+        assert len(matches) == 2
+        assert matches[0].value == "a"
+        assert matches[0].path == "tools[0].name"
+        assert matches[1].value == "b"
+        assert matches[1].path == "tools[1].name"
+    
+    def test_nested_path(self):
+        """Test nested path with multiple arrays."""
+        from mcpscanner.core.schema_linting.path_resolver import query_path
+        
+        data = {
+            "tools": [
+                {"inputSchema": {"properties": {"x": {"type": "string"}, "y": {"type": "number"}}}},
+                {"inputSchema": {"properties": {"z": {"type": "boolean"}}}},
+            ]
+        }
+        matches = list(query_path(data, "tools[].inputSchema.properties[].type"))
+        assert len(matches) == 3
+        assert {m.value for m in matches} == {"string", "number", "boolean"}
+    
+    def test_no_matches(self):
+        """Test path with no matches."""
+        from mcpscanner.core.schema_linting.path_resolver import query_path
+        
+        data = {"tools": []}
+        matches = list(query_path(data, "tools[].name"))
+        assert len(matches) == 0
+
+
+class TestCheckFunctions:
+    """Tests for built-in check functions."""
+    
+    def test_pattern_match(self):
+        """Test pattern check with match."""
+        from mcpscanner.core.schema_linting.checks import check_pattern
+        
+        result = check_pattern("get_users", {"match": "^get_"})
+        assert result.passed
+        
+        result = check_pattern("fetch_users", {"match": "^get_"})
+        assert not result.passed
+    
+    def test_pattern_not_match(self):
+        """Test pattern check with notMatch."""
+        from mcpscanner.core.schema_linting.checks import check_pattern
+        
+        result = check_pattern("safe_name", {"notMatch": "^unsafe_"})
+        assert result.passed
+        
+        result = check_pattern("unsafe_action", {"notMatch": "^unsafe_"})
+        assert not result.passed
+    
+    def test_min_length(self):
+        """Test minLength check."""
+        from mcpscanner.core.schema_linting.checks import check_min_length
+        
+        result = check_min_length("This is long enough", {"min": 10})
+        assert result.passed
+        
+        result = check_min_length("Short", {"min": 10})
+        assert not result.passed
+    
+    def test_max_length(self):
+        """Test maxLength check."""
+        from mcpscanner.core.schema_linting.checks import check_max_length
+        
+        result = check_max_length("Short", {"max": 10})
+        assert result.passed
+        
+        result = check_max_length("This is way too long for the limit", {"max": 10})
+        assert not result.passed
+    
+    def test_required(self):
+        """Test required check."""
+        from mcpscanner.core.schema_linting.checks import check_required
+        
+        result = check_required("value", {})
+        assert result.passed
+        
+        result = check_required(None, {})
+        assert not result.passed
+        
+        result = check_required("", {})
+        assert not result.passed
+    
+    def test_enum(self):
+        """Test enum check."""
+        from mcpscanner.core.schema_linting.checks import check_enum
+        
+        result = check_enum("high", {"values": ["high", "medium", "low"]})
+        assert result.passed
+        
+        result = check_enum("critical", {"values": ["high", "medium", "low"]})
+        assert not result.passed
+    
+    def test_type(self):
+        """Test type check."""
+        from mcpscanner.core.schema_linting.checks import check_type
+        
+        result = check_type("hello", {"type": "string"})
+        assert result.passed
+        
+        result = check_type(123, {"type": "string"})
+        assert not result.passed
+        
+        result = check_type(123, {"type": "number"})
+        assert result.passed
+    
+    def test_casing(self):
+        """Test casing check."""
+        from mcpscanner.core.schema_linting.checks import check_casing
+        
+        result = check_casing("get_users", {"convention": "snake_case"})
+        assert result.passed
+        
+        result = check_casing("GetUsers", {"convention": "snake_case"})
+        assert not result.passed
+        
+        result = check_casing("getUsers", {"convention": "camelCase"})
+        assert result.passed
+
+
+class TestDynamicRule:
+    """Tests for dynamic rules."""
+    
+    def test_create_dynamic_rule(self):
+        """Test creating a dynamic rule from config."""
+        from mcpscanner.core.schema_linting.rules.dynamic_rule import create_dynamic_rule
+        
+        rule_def = {
+            "target": "tools[].name",
+            "check": "pattern",
+            "options": {"match": "^acme_"},
+            "severity": "error",
+            "message": "Must start with acme_"
+        }
+        
+        rule = create_dynamic_rule("acme-prefix", rule_def)
+        assert rule is not None
+        assert rule.id == "acme-prefix"
+        assert rule.target == "tools[].name"
+        assert rule.check_name == "pattern"
+    
+    def test_dynamic_rule_check(self):
+        """Test executing a dynamic rule."""
+        from mcpscanner.core.schema_linting.rules.dynamic_rule import DynamicRule
+        from mcpscanner.core.schema_linting.rule_base import RuleConfig
+        
+        rule = DynamicRule(
+            rule_id="acme-prefix",
+            target="tools[].name",
+            check_name="pattern",
+            options={"match": "^acme_"},
+            severity="error",
+            message="Tool name '{value}' must start with 'acme_'"  # Use {value} placeholder
+        )
+        
+        data = {"tools": [{"name": "acme_users"}, {"name": "get_data"}]}
+        findings = rule.check(data, RuleConfig())
+        
+        # acme_users passes, get_data fails
+        assert len(findings) == 1
+        assert "get_data" in findings[0].message
+        assert findings[0].path == "tools[1].name"
+    
+    def test_dynamic_rule_in_config(self):
+        """Test that dynamic rules from config are executed."""
+        config_dict = {
+            "rules": {
+                "custom-min-desc": {
+                    "target": "tools[].description",
+                    "check": "minLength",
+                    "options": {"min": 50},
+                    "severity": "warn",
+                    "message": "Description too short"
+                }
+            }
+        }
+        
+        config = LintConfig.from_dict(config_dict)
+        assert len(config.dynamic_rules) == 1
+        
+        linter = SchemaLinter()
+        data = {"tools": [{"name": "test", "description": "Short"}]}
+        result = linter.lint(data, config)
+        
+        # Should have finding from dynamic rule
+        dynamic_findings = [f for f in result.findings if f.rule_id == "custom-min-desc"]
+        assert len(dynamic_findings) == 1
+
+
+class TestExtendsRuleset:
+    """Tests for extends functionality."""
+    
+    def test_extends_recommended(self):
+        """Test extending mcp:recommended ruleset."""
+        from mcpscanner.core.schema_linting.rule_loader import load_config
+        import tempfile
+        
+        yaml_content = """
+extends:
+  - mcp:recommended
+
+rules:
+  tool-description-required:
+    severity: warn
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            f.flush()
+            config = load_config(f.name)
+        
+        # Should have tool-description-required overridden to warn
+        rule_config = config.rules.get("tool-description-required")
+        assert rule_config is not None
+        Path(f.name).unlink()
+    
+    def test_extends_strict(self):
+        """Test extending mcp:strict ruleset."""
+        from mcpscanner.core.schema_linting.rule_loader import resolve_ruleset
+        
+        strict_rules = resolve_ruleset("mcp:strict")
+        assert len(strict_rules) > 0
+        # Strict ruleset has error severity for most rules
+        assert strict_rules.get("tool-description-required").severity == "error"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

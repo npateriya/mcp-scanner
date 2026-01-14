@@ -7,6 +7,8 @@ The **MCP Schema Linter** validates MCP (Model Context Protocol) server definiti
 ## Features
 
 ✅ **37 Built-in Rules** - Comprehensive coverage for tools, prompts, and resources  
+✅ **Custom Dynamic Rules** - Create your own rules in YAML without writing code  
+✅ **3 Built-in Rulesets** - `mcp:recommended` (default), `mcp:strict`, `mcp:quality` presets  
 ✅ **Multiple Input Sources** - Local files and remote HTTP servers  
 ✅ **Configurable Severity** - Customize rules via `.mcp-lint.yaml`  
 ✅ **Multiple Output Formats** - Table (summary), Text (detailed), JSON (CI/CD)  
@@ -16,16 +18,6 @@ The **MCP Schema Linter** validates MCP (Model Context Protocol) server definiti
 ---
 
 ## Quick Start
-
-### Lint a Local File
-
-```bash
-# Lint a static JSON file
-mcp-scanner lint tools.json
-
-# Lint multiple files
-mcp-scanner lint tools.json prompts.json resources.json
-```
 
 ### Lint a Remote MCP Server
 
@@ -37,11 +29,25 @@ mcp-scanner lint --server-url https://mcp.deepwiki.com/mcp
 mcp-scanner lint --server-url https://mcp.deepwiki.com/mcp -v
 ```
 
+### Lint a Local File
+
+```bash
+# Lint a static JSON file
+mcp-scanner lint tools.json
+
+# Lint multiple files
+mcp-scanner lint tools.json prompts.json resources.json
+```
+
 ### Lint with Custom Config
 
 ```bash
-# Use a custom ruleset configuration
+# Use a custom configuration file
 mcp-scanner lint --config .mcp-lint.yaml tools.json
+
+# Use strict ruleset (create a config file first)
+echo 'extends: ["mcp:strict"]' > strict.yaml
+mcp-scanner lint --config strict.yaml tools.json
 ```
 
 ---
@@ -239,55 +245,9 @@ mcp-scanner lint --format json tools.json
 
 ---
 
-## Configuration
-
-Create a `.mcp-lint.yaml` file to customize rule behavior:
-
-```yaml
-# .mcp-lint.yaml
-
-# Extend the recommended ruleset
-extends: ["mcp:recommended"]
-
-# Override specific rules
-rules:
-  # Disable a rule entirely
-  tool-output-schema-defined: off
-  
-  # Change severity
-  tool-description-min-length:
-    severity: error
-  
-  # Customize options
-  tool-name-casing:
-    severity: warn
-    options:
-      convention: "snake_case"  # snake_case, camelCase, kebab-case
-  
-  # Adjust minimum length
-  tool-description-min-length:
-    severity: warn
-    options:
-      min: 50
-```
-
-### CLI Rule Overrides
-
-Override rules directly from the command line:
-
-```bash
-# Disable a rule
-mcp-scanner lint --rule "tool-output-schema-defined:off" tools.json
-
-# Change severity to error
-mcp-scanner lint --rule "tool-description-min-length:error" tools.json
-```
-
----
-
 ## Built-in Rules
 
-Use `--list-rules` to see all available rules:
+The linter includes **37 built-in rules** covering tools, prompts, resources, and general quality. Use `--list-rules` to see all available rules:
 
 ```bash
 mcp-scanner lint --list-rules
@@ -349,6 +309,336 @@ mcp-scanner lint --list-rules
 |---------|----------|-------------|
 | `no-empty-arrays` | warn | Avoid empty tools/prompts/resources arrays |
 | `description-no-html` | warn | Descriptions should not contain HTML |
+
+---
+
+## Customizing Rules
+
+Once you're familiar with the built-in rules, you can customize their behavior.
+
+### CLI Rule Overrides
+
+Override rules directly from the command line (quick one-off changes):
+
+```bash
+# Disable a rule for this run
+mcp-scanner lint --rule "tool-output-schema-defined:off" tools.json
+
+# Change severity to error
+mcp-scanner lint --rule "tool-description-min-length:error" tools.json
+```
+
+### Configuration File Overrides
+
+For persistent customization, use a `.mcp-lint.yaml` file:
+
+```yaml
+# .mcp-lint.yaml
+extends: ["mcp:recommended"]
+
+rules:
+  # Disable a rule entirely
+  tool-output-schema-defined: off
+  
+  # Change severity
+  tool-description-min-length:
+    severity: error
+  
+  # Customize options
+  tool-name-casing:
+    severity: warn
+    options:
+      convention: "camelCase"  # Change from default snake_case
+  
+  # Require longer descriptions
+  tool-description-min-length:
+    severity: warn
+    options:
+      min: 50  # Increase from default 20
+```
+
+### Built-in Rulesets
+
+**What is a ruleset?** A ruleset is a pre-configured bundle of rule settings (severity levels and options) that you can inherit from. Instead of configuring each rule individually, you extend a ruleset and only override what you need.
+
+Use `extends` in your config file to inherit from a ruleset:
+
+```yaml
+extends: ["mcp:recommended"]  # Start with this ruleset
+```
+
+#### Available Rulesets
+
+| Ruleset | Best For | Description |
+|---------|----------|-------------|
+| `mcp:recommended` | Most users | **Default.** Balanced defaults - errors for critical issues, warnings for best practices |
+| `mcp:strict` | Production/CI | Everything as errors with stricter thresholds - fails fast |
+| `mcp:quality` | Documentation | Focus on description quality with longer minimum lengths |
+
+#### Ruleset Comparison
+
+The following table shows how each ruleset configures the **core rules** (all 37 built-in rules run, but these are the ones with explicit configuration):
+
+| Rule | `mcp:recommended` ⭐ | `mcp:strict` | `mcp:quality` |
+|------|-------------------|--------------|---------------|
+| **Tool Rules** ||||
+| `tool-description-required` | error | error | error |
+| `tool-description-min-length` | warn (20 chars) | **error (30 chars)** | warn **(50 chars)** |
+| `tool-name-casing` | warn | **error** | info |
+| `tool-input-schema-required` | warn | **error** | warn |
+| `tool-input-schema-properties` | info | **error** | warn |
+| **Prompt Rules** ||||
+| `prompt-description-required` | error | error | error |
+| `prompt-arguments-description` | warn | **error** | **error** |
+| **Resource Rules** ||||
+| `resource-description-required` | warn | **error** | **error** |
+| `resource-mime-type` | info | warn | info |
+
+**Key differences:**
+- **`mcp:strict`** — Upgrades most warnings to errors, uses stricter thresholds (30 char min description)
+- **`mcp:quality`** — Requires longer descriptions (50 chars), requires property descriptions in schemas
+
+#### Running with Different Rulesets
+
+**Method 1: Create a config file**
+
+Create `.mcp-lint.yaml` in your project root:
+```yaml
+extends: ["mcp:strict"]  # Use strict ruleset
+```
+
+Then run (auto-discovers config):
+```bash
+mcp-scanner lint tools.json
+```
+
+**Method 2: Use explicit config file**
+
+Create `strict-rules.yaml`:
+```yaml
+extends: ["mcp:strict"]
+```
+
+Run with `--config`:
+```bash
+# Use strict ruleset
+mcp-scanner lint --config strict-rules.yaml tools.json
+
+# Or quality ruleset
+mcp-scanner lint --config quality-rules.yaml tools.json
+```
+
+**Method 3: Quick switch without config file**
+
+Currently, you need a config file to switch rulesets. For quick testing, create minimal files:
+
+```bash
+# Create strict config
+echo 'extends: ["mcp:strict"]' > .mcp-lint-strict.yaml
+
+# Run with strict rules
+mcp-scanner lint --config .mcp-lint-strict.yaml tools.json
+```
+
+#### Customizing Rulesets
+
+**Start strict, then relax specific rules:**
+```yaml
+# strict-relaxed.yaml
+extends: ["mcp:strict"]
+
+rules:
+  tool-output-schema-defined: off     # Disable this rule
+  tool-description-min-length:
+    severity: warn                    # Downgrade to warning
+```
+
+**Combine rulesets (later ones override earlier):**
+```yaml
+extends: ["mcp:recommended", "mcp:quality"]  # quality settings override recommended
+```
+
+**Default behavior:** If you don't specify `extends` or use a config file, `mcp:recommended` is used automatically.
+
+---
+
+## Custom Dynamic Rules (Advanced)
+
+The Dynamic Rulesets feature lets you create your own custom linting rules using simple YAML configuration — **no Python coding required**. Think of it like creating custom spell-check rules for your MCP tool definitions.
+
+#### Why Use Custom Rules?
+
+| Use Case | Example Rule |
+|----------|--------------|
+| **Enforce naming conventions** | All tools must start with `mycompany_` |
+| **Require documentation** | All schema properties need descriptions |
+| **Limit complexity** | Tool names can't exceed 40 characters |
+| **Block patterns** | No placeholder text like "TODO" in descriptions |
+| **Standardize formats** | All resource URIs must use `https://` |
+
+#### How Rules Work
+
+Every custom rule has **3 essential parts**:
+
+```yaml
+my-rule-name:
+  target: "tools[].description"   # 1️⃣ WHERE to look (path pattern)
+  check: "minLength"              # 2️⃣ WHAT to check (built-in function)
+  options:                        # 3️⃣ HOW to check (parameters)
+    min: 50
+  severity: warn                  # error, warn, info, or hint
+  message: "Description too short"
+```
+
+#### Complete Example
+
+```yaml
+# .mcp-lint.yaml
+extends: ["mcp:recommended"]  # Start with sensible defaults
+
+rules:
+  # Custom rule: enforce company naming prefix
+  acme-tool-prefix:
+    target: "tools[].name"
+    check: "pattern"
+    options:
+      match: "^acme_|^internal_"
+    severity: error
+    message: "Tool name '{value}' must start with 'acme_' or 'internal_'"
+    recommendation: "Rename tool to use company prefix"
+  
+  # Custom rule: require property descriptions
+  require-prop-descriptions:
+    target: "tools[].inputSchema.properties[].description"
+    check: "required"
+    severity: warn
+    message: "Property at {path} is missing description"
+  
+  # Custom rule: block placeholder text
+  no-placeholder-text:
+    target: "tools[].description"
+    check: "pattern"
+    options:
+      notMatch: "(TODO|FIXME|TBD|placeholder)"
+    severity: error
+    message: "Description contains placeholder text"
+  
+  # Custom rule: enforce max length on tool names
+  tool-name-max-length:
+    target: "tools[].name"
+    check: "maxLength"
+    options:
+      max: 40
+    severity: warn
+    message: "Tool name exceeds 40 characters"
+```
+
+#### Path Patterns (WHERE to look)
+
+The `target` field uses a simplified path syntax to specify what values to check:
+
+| Pattern | What It Checks |
+|---------|----------------|
+| `tools[].name` | All tool names |
+| `tools[].description` | All tool descriptions |
+| `tools[].inputSchema.properties[].type` | All property types in input schemas |
+| `tools[].inputSchema.properties[].description` | All property descriptions |
+| `prompts[].name` | All prompt names |
+| `prompts[].arguments[].description` | All prompt argument descriptions |
+| `resources[].uri` | All resource URIs |
+
+The `[]` syntax means "iterate over all items in the array or object".
+
+#### Check Functions (WHAT to check)
+
+| Check | Description | Options | Example |
+|-------|-------------|---------|---------|
+| `pattern` | Regex matching | `match`, `notMatch` | `match: "^get_"` |
+| `minLength` | Minimum string length | `min` | `min: 20` |
+| `maxLength` | Maximum string length | `max` | `max: 100` |
+| `required` | Value must exist and be non-empty | `allowEmpty` | - |
+| `notEmpty` | Value not null/empty | - | - |
+| `enum` | Value in allowed list | `values` | `values: [a, b, c]` |
+| `type` | JSON type check | `type` | `type: string` |
+| `casing` | Naming convention | `convention` | `convention: snake_case` |
+| `startsWith` | String prefix | `prefix` | `prefix: "get_"` |
+| `endsWith` | String suffix | `suffix` | `suffix: "_id"` |
+| `range` | Numeric range | `min`, `max` | `min: 1, max: 100` |
+
+**Casing options:** `snake_case`, `camelCase`, `kebab-case`, `PascalCase`
+
+**Type options:** `string`, `number`, `integer`, `boolean`, `object`, `array`, `null`
+
+#### Message Templates
+
+Custom messages support placeholders:
+
+| Placeholder | Description | Example Output |
+|-------------|-------------|----------------|
+| `{value}` | The actual value that failed | `get_users` |
+| `{path}` | Full path to the value | `tools[0].name` |
+
+```yaml
+message: "Tool '{value}' at {path} violates naming convention"
+# Output: "Tool 'BadName' at tools[2].name violates naming convention"
+```
+
+#### Built-in Rulesets (extends)
+
+Start with a pre-configured ruleset and customize from there:
+
+| Ruleset | Description |
+|---------|-------------|
+| `mcp:recommended` | Balanced defaults (used by default) |
+| `mcp:strict` | All rules as errors, stricter thresholds |
+| `mcp:quality` | Focus on documentation quality |
+
+```yaml
+# Start strict, then relax specific rules
+extends: ["mcp:strict"]
+
+rules:
+  tool-output-schema-defined: off     # Disable this rule
+  tool-description-min-length:
+    severity: warn                    # Downgrade to warning
+```
+
+#### More Examples
+
+**Enforce HTTPS for resources:**
+```yaml
+https-only:
+  target: "resources[].uri"
+  check: "startsWith"
+  options:
+    prefix: "https://"
+  severity: error
+  message: "Resource URI must use HTTPS"
+```
+
+**Require enum values to be strings:**
+```yaml
+string-enums:
+  target: "tools[].inputSchema.properties[].enum[]"
+  check: "type"
+  options:
+    type: "string"
+  severity: info
+  message: "Enum values should be strings for consistent LLM handling"
+```
+
+**Limit description length:**
+```yaml
+concise-descriptions:
+  target: "tools[].description"
+  check: "maxLength"
+  options:
+    max: 500
+  severity: warn
+  message: "Description exceeds 500 characters - consider being more concise"
+```
+
+See `examples/custom-rules.mcp-lint.yaml` for a complete working example.
 
 ---
 

@@ -1,0 +1,92 @@
+# Example custom rules configuration for mcp-scanner schema linter
+# This demonstrates the dynamic rules feature from Phase 2a
+#
+# Save this as .mcp-lint.yaml in your project root to enable these rules
+
+# Extend the recommended ruleset as baseline
+extends:
+  - mcp:recommended
+
+# Define custom rules and override built-in rules
+rules:
+  # ===== OVERRIDE BUILT-IN RULES =====
+  
+  # Make description requirements stricter
+  tool-description-min-length:
+    severity: error
+    options:
+      min: 50  # Require longer descriptions
+  
+  # Disable a rule if not applicable
+  # resource-mime-type: off
+  
+  # ===== CUSTOM DYNAMIC RULES =====
+  
+  # Enforce company naming prefix on tools
+  acme-tool-prefix:
+    target: "tools[].name"
+    check: "pattern"
+    options:
+      match: "^acme_|^internal_"
+    severity: warn
+    message: "Tool name '{value}' should start with 'acme_' or 'internal_'"
+    description: "Enforces company tool naming convention"
+    recommendation: "Rename tool to start with 'acme_' prefix"
+  
+  # Require property descriptions in input schemas
+  require-property-descriptions:
+    target: "tools[].inputSchema.properties[].description"
+    check: "required"
+    severity: warn
+    message: "Schema property at {path} is missing a description"
+    description: "All input properties should have descriptions for LLM clarity"
+    recommendation: "Add a description field to explain this parameter"
+  
+  # Validate property names use snake_case
+  property-name-snake-case:
+    target: "tools[].inputSchema.properties"
+    check: "casing"
+    options:
+      convention: "snake_case"
+    severity: info
+    message: "Property names should use snake_case convention"
+    description: "Consistent property naming helps LLM tool invocation"
+  
+  # Ensure descriptions don't contain banned words
+  no-placeholder-text:
+    target: "tools[].description"
+    check: "pattern"
+    options:
+      notMatch: "(TODO|FIXME|TBD|placeholder)"
+    severity: error
+    message: "Description contains placeholder text: '{value}'"
+    description: "Production descriptions should not contain placeholder markers"
+    recommendation: "Replace placeholder with actual description"
+  
+  # Limit tool name length for readability
+  tool-name-length:
+    target: "tools[].name"
+    check: "maxLength"
+    options:
+      max: 40
+    severity: warn
+    message: "Tool name '{value}' exceeds 40 characters"
+    description: "Keep tool names concise for better readability"
+    recommendation: "Shorten the tool name while keeping it descriptive"
+  
+  # Ensure enum types are consistent
+  enum-value-type:
+    target: "tools[].inputSchema.properties[].enum[]"
+    check: "type"
+    options:
+      type: "string"
+    severity: info
+    message: "Enum values should be strings for consistent LLM handling"
+    description: "String enums work best with LLM tool calling"
+
+# Ignore patterns for files/paths
+ignore:
+  - "**/test-fixtures/**"
+  - "**/examples/**"
+  - "**/deprecated/**"
+

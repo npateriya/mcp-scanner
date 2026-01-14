@@ -41,6 +41,9 @@ from .linter import SchemaLinter, LintConfig
 from .rule_loader import load_config as load_lint_config
 from .formatters import TextFormatter, JsonFormatter, TableFormatter
 from .orchestrator import LintOrchestrator, LintOptions
+from .checks import get_check, list_checks, CheckResult
+from .rules.dynamic_rule import DynamicRule, create_dynamic_rule
+from .path_resolver import query_path, PathMatch
 
 __all__ = [
     # Core classes
@@ -59,5 +62,13 @@ __all__ = [
     "TextFormatter",
     "JsonFormatter",
     "TableFormatter",
+    # Dynamic rules (Phase 2a)
+    "DynamicRule",
+    "create_dynamic_rule",
+    "get_check",
+    "list_checks",
+    "CheckResult",
+    "query_path",
+    "PathMatch",
 ]
 

@@ -1,6 +1,6 @@
 # MCP Schema Linter - Design Document
 
-> **Status:** ✅ Phase 1 Implemented  
+> **Status:** ✅ Phase 2a Implemented (Dynamic Rulesets)  
 > **Author:** @npateriya  
 > **Created:** 2026-01-13  
 > **Last Updated:** 2026-01-14  
@@ -904,23 +904,55 @@ mcpscanner/core/schema_linting/
     └── table.py             # Grouped summary (api-insights style)
 ```
 
-### Phase 2: LLM + Extensibility 📋 TODO
+### Phase 2a: Dynamic Rulesets ✅ COMPLETE
+
+**Implemented:**
+- ✅ **Simplified path parser** - `tools[].name`, `tools[].inputSchema.properties[].type`
+- ✅ **11 built-in check functions** - pattern, minLength, maxLength, required, enum, type, notEmpty, startsWith, endsWith, casing, range
+- ✅ **Dynamic rules in YAML** - Define custom rules without writing Python
+- ✅ **`extends` resolution** - Inherit from `mcp:recommended`, `mcp:strict`, `mcp:quality`
+- ✅ **Message templating** - Use `{value}`, `{path}` in custom messages
+- ✅ **16 additional unit tests** (110 total)
+
+**New Files:**
+```
+mcpscanner/core/schema_linting/
+├── checks.py              # 11 built-in check functions
+├── path_resolver.py       # query_path() for dynamic rules
+├── rules/
+│   └── dynamic_rule.py    # DynamicRule class
+
+examples/
+└── custom-rules.mcp-lint.yaml  # Example custom rules
+```
+
+**Example Custom Rule:**
+```yaml
+rules:
+  acme-tool-prefix:
+    target: "tools[].name"
+    check: "pattern"
+    options:
+      match: "^acme_"
+    severity: error
+    message: "Tool name '{value}' must start with 'acme_'"
+```
+
+**Actual Lines Added:** ~500
+
+### Phase 2b: LLM Quality Checks 📋 TODO
 
 **Scope:**
 - `--llm` flag for LLM-powered quality checks
 - Reuse existing LLM infrastructure
-- `extends` for ruleset inheritance
-- Custom rules via YAML (simple syntax)
-- Additional check functions
 - SARIF output format
-- `mcp:strict` and `mcp:security` rulesets
 
 **LLM Checks to Implement:**
 - `llm-description-quality` - Is description helpful?
 - `llm-name-description-coherence` - Do name and description align?
 - `llm-schema-description-coherence` - Does schema match description?
 
-**Estimated Lines of Code:** ~500-800 additional
+**Estimated Lines of Code:** ~300-500 additional
 
 ### Phase 3: Advanced 📋 TODO
 
@@ -948,13 +980,15 @@ mcpscanner/
 │       ├── __init__.py              # Public API exports (clean interface)
 │       ├── linter.py                # SchemaLinter, LintConfig, LintResult
 │       ├── rule_base.py             # Finding, Rule, Severity, RuleConfig
-│       ├── path_resolver.py         # get_items(), build_item_path() helpers
+│       ├── path_resolver.py         # get_items(), build_item_path(), query_path()
 │       ├── rule_loader.py           # load_config() for .mcp-lint.yaml
 │       ├── orchestrator.py          # LintOrchestrator (CLI handler logic)
+│       ├── checks.py                # 11 built-in check functions (Phase 2a)
 │       │
 │       ├── rules/
 │       │   ├── __init__.py          # Rule exports
 │       │   ├── registry.py          # RuleRegistry, get_default_registry()
+│       │   ├── dynamic_rule.py      # DynamicRule for YAML rules (Phase 2a)
 │       │   └── builtin/
 │       │       ├── __init__.py      # Imports all builtin rules
 │       │       ├── tool_rules.py    # Re-exports from split files
@@ -977,8 +1011,11 @@ mcpscanner/
 │
 ├── cli.py                           # lint subcommand integration
 │
+examples/
+├── custom-rules.mcp-lint.yaml       # Example custom rules (Phase 2a)
+│
 tests/
-├── test_schema_linting.py           # 76 tests for all rules
+├── test_schema_linting.py           # 110 tests (Phase 1 + Phase 2a)
 │
 docs/
 ├── schema-linting.md                # User documentation
@@ -990,7 +1027,7 @@ docs/
 
 ## Testing Strategy ✅ IMPLEMENTED
 
-### Unit Tests (76 tests passing)
+### Unit Tests (110 tests passing)
 
 - ✅ Each rule has dedicated tests (positive and negative)
 - ✅ Config loading and validation

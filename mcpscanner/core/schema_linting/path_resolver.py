@@ -266,3 +266,156 @@ def build_item_path(key: str, index: int, is_wrapped: bool) -> str:
     if is_wrapped:
         return build_path(key, index)
     return f"[{index}]"
+
+
+# =============================================================================
+# Simplified Path Query System for Dynamic Rules
+# =============================================================================
+
+def query_path(data: Any, path_pattern: str) -> Iterator[PathMatch]:
+    """Query data using simplified path patterns with wildcard support.
+    
+    Supports patterns like:
+    - "tools[].name" - All tool names
+    - "tools[].inputSchema.properties[].type" - All property types
+    - "prompts[].arguments[].description" - All argument descriptions
+    
+    The [] syntax means "iterate all items in array".
+    
+    Args:
+        data: The data to query
+        path_pattern: Pattern with [] for array iteration
+        
+    Yields:
+        PathMatch for each value matching the pattern
+        
+    Example:
+        data = {"tools": [{"name": "a"}, {"name": "b"}]}
+        for match in query_path(data, "tools[].name"):
+            print(f"{match.path}: {match.value}")
+        # Output:
+        # tools[0].name: a
+        # tools[1].name: b
+    """
+    parts = _parse_pattern(path_pattern)
+    yield from _query_recursive(data, parts, "")
+
+
+def _parse_pattern(pattern: str) -> list[str | None]:
+    """Parse a path pattern into parts.
+    
+    "tools[].name" -> ["tools", None, "name"]
+    Where None represents [] (iterate array)
+    """
+    parts: list[str | None] = []
+    current = ""
+    i = 0
+    
+    while i < len(pattern):
+        char = pattern[i]
+        
+        if char == ".":
+            if current:
+                parts.append(current)
+                current = ""
+        elif char == "[":
+            if current:
+                parts.append(current)
+                current = ""
+            # Check if it's [] (wildcard) or [n] (index)
+            if i + 1 < len(pattern) and pattern[i + 1] == "]":
+                parts.append(None)  # Wildcard
+                i += 1  # Skip ]
+            else:
+                # Find closing bracket for index
+                j = i + 1
+                while j < len(pattern) and pattern[j] != "]":
+                    j += 1
+                index_str = pattern[i + 1 : j]
+                try:
+                    parts.append(str(int(index_str)))  # Keep as string marker
+                except ValueError:
+                    parts.append(index_str)
+                i = j
+        else:
+            current += char
+        
+        i += 1
+    
+    if current:
+        parts.append(current)
+    
+    return parts
+
+
+def _query_recursive(
+    data: Any, 
+    parts: list[str | None], 
+    current_path: str
+) -> Iterator[PathMatch]:
+    """Recursively query data following the pattern parts."""
+    if not parts:
+        # End of pattern - yield current value
+        yield PathMatch(
+            path=current_path,
+            value=data,
+            parent=None,
+            key=""
+        )
+        return
+    
+    part = parts[0]
+    remaining = parts[1:]
+    
+    if part is None:
+        # Wildcard [] - iterate array or dict values
+        if isinstance(data, list):
+            for i, item in enumerate(data):
+                item_path = f"{current_path}[{i}]" if current_path else f"[{i}]"
+                yield from _query_recursive(item, remaining, item_path)
+        elif isinstance(data, dict):
+            # For dicts, iterate over values (common for properties objects)
+            for key, item in data.items():
+                item_path = f"{current_path}.{key}" if current_path else key
+                yield from _query_recursive(item, remaining, item_path)
+    else:
+        # Named key or index
+        if isinstance(data, dict) and part in data:
+            new_path = f"{current_path}.{part}" if current_path else part
+            yield from _query_recursive(data[part], remaining, new_path)
+        elif isinstance(data, list):
+            try:
+                index = int(part)
+                if 0 <= index < len(data):
+                    new_path = f"{current_path}[{index}]"
+                    yield from _query_recursive(data[index], remaining, new_path)
+            except ValueError:
+                pass
+
+
+def check_path_exists(data: Any, path_pattern: str) -> bool:
+    """Check if any values exist at the given path pattern.
+    
+    Args:
+        data: The data to check
+        path_pattern: Pattern like "tools[].name"
+        
+    Returns:
+        True if at least one value exists at the pattern
+    """
+    for _ in query_path(data, path_pattern):
+        return True
+    return False
+
+
+def count_matches(data: Any, path_pattern: str) -> int:
+    """Count how many values match the path pattern.
+    
+    Args:
+        data: The data to check
+        path_pattern: Pattern like "tools[].name"
+        
+    Returns:
+        Number of matching values
+    """
+    return sum(1 for _ in query_path(data, path_pattern))

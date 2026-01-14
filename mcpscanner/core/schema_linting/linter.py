@@ -29,6 +29,7 @@ from typing import Any
 
 from .rule_base import Finding, RuleConfig, Severity
 from .rules.registry import get_default_registry, RuleRegistry
+from .rules.dynamic_rule import parse_dynamic_rules, DynamicRule
 
 
 @dataclass
@@ -41,18 +42,24 @@ class LintConfig:
         ignore_patterns: Glob patterns for paths to ignore
         fail_on_error: Whether to treat errors as failures (for exit codes)
         fail_on_warn: Whether to treat warnings as failures
+        raw_rules: Raw rule definitions from YAML (for dynamic rules)
+        dynamic_rules: Parsed dynamic rules from config
     """
     rules: dict[str, RuleConfig | str | None] = field(default_factory=dict)
     extends: list[str] = field(default_factory=lambda: ["mcp:recommended"])
     ignore_patterns: list[str] = field(default_factory=list)
     fail_on_error: bool = True
     fail_on_warn: bool = False
+    raw_rules: dict[str, Any] = field(default_factory=dict)  # For dynamic rule parsing
+    dynamic_rules: list = field(default_factory=list)  # Parsed DynamicRule instances
     
     @classmethod
     def from_dict(cls, data: dict) -> "LintConfig":
         """Create config from dictionary (e.g., parsed YAML)."""
+        raw_rules = data.get("rules", {})
         rules = {}
-        for rule_id, rule_config in data.get("rules", {}).items():
+        
+        for rule_id, rule_config in raw_rules.items():
             if isinstance(rule_config, (str, type(None))):
                 rules[rule_id] = RuleConfig.from_dict(rule_config)
             elif isinstance(rule_config, dict):
@@ -60,12 +67,17 @@ class LintConfig:
             else:
                 rules[rule_id] = RuleConfig()
         
+        # Parse dynamic rules from config
+        dynamic_rules = parse_dynamic_rules(raw_rules)
+        
         return cls(
             rules=rules,
             extends=data.get("extends", ["mcp:recommended"]),
             ignore_patterns=data.get("ignore", []),
             fail_on_error=data.get("fail_on_error", True),
             fail_on_warn=data.get("fail_on_warn", False),
+            raw_rules=raw_rules,
+            dynamic_rules=dynamic_rules,
         )
     
     @classmethod
@@ -216,7 +228,7 @@ class SchemaLinter:
         else:
             normalized = data
         
-        # Run all enabled rules
+        # Run all enabled built-in rules
         for rule in self.registry.get_all():
             rule_config = self._get_rule_config(rule.id, config)
             
@@ -229,6 +241,19 @@ class SchemaLinter:
             except Exception as e:
                 # Add an error for rule execution failures
                 result.errors.append(f"Rule '{rule.id}' failed: {e}")
+        
+        # Run dynamic rules from config
+        for dynamic_rule in config.dynamic_rules:
+            rule_config = self._get_rule_config(dynamic_rule.id, config)
+            
+            if not rule_config.enabled:
+                continue
+            
+            try:
+                findings = dynamic_rule.check(normalized, rule_config, source)
+                result.findings.extend(findings)
+            except Exception as e:
+                result.errors.append(f"Dynamic rule '{dynamic_rule.id}' failed: {e}")
         
         return result
     
@@ -245,8 +270,12 @@ class SchemaLinter:
         warnings = []
         known_rule_ids = {rule.id for rule in self.registry.get_all()}
         
+        # Dynamic rules are also known (they define themselves)
+        dynamic_rule_ids = {rule.id for rule in config.dynamic_rules}
+        all_known_ids = known_rule_ids | dynamic_rule_ids
+        
         for rule_id in config.rules.keys():
-            if rule_id not in known_rule_ids:
+            if rule_id not in all_known_ids:
                 # Find similar rule IDs for suggestion
                 similar = self._find_similar_rule_id(rule_id, known_rule_ids)
                 if similar:
