@@ -333,7 +333,7 @@ This approach:
 |-----------|---------------|
 | **Config Loader** | Parse `.mcp-lint.yaml`, merge with defaults |
 | **Rule Engine** | Execute rules, collect findings |
-| **Formatter Engine** | Format output (stylish, JSON, SARIF) |
+| **Formatter Engine** | Format output (table, text, JSON) |
 | **Built-in Rules** | 15+ hardcoded quality checks |
 | **Custom Rules** | User-defined rules (Phase 2) |
 
@@ -393,6 +393,470 @@ class Rule(ABC):
 3. Filter findings by severity threshold
 4. Format and output results
 ```
+
+---
+
+## Code-Level Architecture Details
+
+### Data Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                           CLI                                    │
+│  mcp-scanner lint --server-url URL --config .mcp-lint.yaml      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     LintOrchestrator                            │
+│  - Fetches tools/prompts/resources from MCP server              │
+│  - Reads local JSON files                                        │
+│  - Aggregates results from multiple sources                      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      SchemaLinter                                │
+│  - Loads LintConfig                                              │
+│  - Runs 37 built-in rules via RuleRegistry                       │
+│  - Runs dynamic rules from config                                │
+│  - Returns LintResult with findings and stats                    │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        Rules Layer                               │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │  Built-in Rules │  │  Dynamic Rules  │  │  Path Resolver  │  │
+│  │  (37 Python)    │  │  (YAML config)  │  │  + Check Funcs  │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        LintResult                                │
+│  - findings: List[Finding]                                       │
+│  - stats: ScanStats (tools, prompts, resources count)           │
+│  - errors: Infrastructure errors (connection, parse)            │
+│  - config_warnings: Unknown rule warnings                        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       Formatters                                 │
+│  TableFormatter  │  TextFormatter  │  JsonFormatter              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Core Classes (rule_base.py)
+
+#### Severity Enum
+
+```python
+class Severity(str, Enum):
+    """Severity levels for linting findings."""
+    ERROR = "error"    # Critical - fails CI/CD
+    WARN = "warn"      # Should address
+    INFO = "info"      # Informational
+    HINT = "hint"      # Suggestion
+    OFF = "off"        # Disabled
+    
+    @classmethod
+    def from_string(cls, value: str) -> "Severity":
+        """Parse severity from string, case-insensitive."""
+        try:
+            return cls(value.lower())
+        except ValueError:
+            return cls.WARN  # Default
+```
+
+#### Finding Dataclass
+
+```python
+@dataclass
+class Finding:
+    """Represents a single linting finding/issue."""
+    rule_id: str          # e.g., "tool-description-required"
+    message: str          # Human-readable description
+    severity: Severity    # error, warn, info, hint
+    path: str             # JSONPath-like, e.g., "tools[0].description"
+    source: str = ""      # File path or URL
+    line: int | None = None
+    column: int | None = None
+    suggestion: str | None = None  # Fix recommendation
+    docs_url: str | None = None
+    
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to JSON-serializable dict."""
+        ...
+```
+
+#### RuleConfig Dataclass
+
+```python
+@dataclass
+class RuleConfig:
+    """Configuration for a linting rule."""
+    severity: Severity = Severity.WARN
+    enabled: bool = True
+    options: dict[str, Any] = field(default_factory=dict)
+    
+    @classmethod
+    def from_dict(cls, data: dict | str | None) -> "RuleConfig":
+        """Parse from various formats:
+        - None or "off" -> disabled
+        - "error"/"warn" -> just severity
+        - {"severity": "error", "options": {...}} -> full config
+        """
+        ...
+```
+
+#### Rule Abstract Base Class
+
+```python
+class Rule(ABC):
+    """Abstract base class for all linting rules."""
+    
+    id: str = ""                          # Unique identifier
+    description: str = ""                 # Human-readable
+    default_severity: Severity = Severity.WARN
+    docs_url: str | None = None
+    category: str = "general"             # tool, prompt, resource, general
+    
+    @abstractmethod
+    def check(self, data: dict, config: RuleConfig, source: str = "") -> list[Finding]:
+        """Execute the rule and return findings."""
+        pass
+    
+    def create_finding(self, message: str, path: str, config: RuleConfig, 
+                       source: str = "", suggestion: str | None = None) -> Finding:
+        """Helper to create a finding with this rule's metadata."""
+        return Finding(
+            rule_id=self.id,
+            message=message,
+            severity=config.severity,
+            path=path,
+            source=source,
+            suggestion=suggestion,
+            docs_url=self.docs_url,
+        )
+```
+
+### Rule Implementation Pattern
+
+Every built-in rule follows this pattern:
+
+```python
+# From tool_rules_basic.py
+class ToolDescriptionRequired(Rule):
+    """Validates that all tools have a non-empty description."""
+    
+    id = "tool-description-required"
+    description = "Tools must have a non-empty description field"
+    default_severity = Severity.ERROR
+    category = "tool"
+    
+    def check(self, data: dict, config: RuleConfig, source: str = "") -> list[Finding]:
+        findings = []
+        tools, is_wrapped = get_items(data, "tools")  # Helper from path_resolver
+        
+        for i, tool in enumerate(tools):
+            if not isinstance(tool, dict):
+                continue
+                
+            desc = tool.get("description", "")
+            if not desc or (isinstance(desc, str) and not desc.strip()):
+                path = build_item_path("tools", i, is_wrapped)
+                findings.append(self.create_finding(
+                    message=f"Tool '{tool.get('name', 'unnamed')}' is missing a description",
+                    path=f"{path}.description",
+                    config=config,
+                    source=source,
+                    suggestion="Add a meaningful description...",
+                ))
+        
+        return findings
+```
+
+### Path Resolver System (path_resolver.py)
+
+The path resolver provides utilities for navigating MCP data structures:
+
+#### Helper Functions for Built-in Rules
+
+```python
+def get_items(data: dict | list, key: str) -> tuple[list[dict], bool]:
+    """Extract items from MCP data, handling both wrapped and direct formats.
+    
+    Example:
+        # Wrapped format: {"tools": [{...}, {...}]}
+        items, wrapped = get_items(data, "tools")  # ([{...}, {...}], True)
+        
+        # Direct list format: [{...}, {...}]
+        items, wrapped = get_items(data, "tools")  # ([{...}, {...}], False)
+    """
+    ...
+
+def build_item_path(key: str, index: int, is_wrapped: bool) -> str:
+    """Build correct path prefix based on data format.
+    
+    Example:
+        build_item_path("tools", 0, True)   # "tools[0]"
+        build_item_path("tools", 0, False)  # "[0]"
+    """
+    ...
+```
+
+#### Query System for Dynamic Rules
+
+```python
+@dataclass
+class PathMatch:
+    """Result of a path query."""
+    path: str      # e.g., "tools[0].name"
+    value: Any     # The value at this path
+    parent: Any    # Parent object
+    key: str | int # Key used to access from parent
+
+def query_path(data: Any, path_pattern: str) -> Iterator[PathMatch]:
+    """Query data using simplified path patterns with wildcard support.
+    
+    The [] syntax means "iterate all items in array".
+    
+    Example:
+        data = {"tools": [{"name": "a"}, {"name": "b"}]}
+        
+        for match in query_path(data, "tools[].name"):
+            print(f"{match.path}: {match.value}")
+        
+        # Output:
+        # tools[0].name: a
+        # tools[1].name: b
+    
+    Supported patterns:
+        - "tools[].name"                       # All tool names
+        - "tools[].inputSchema.properties[]"   # All properties
+        - "prompts[].arguments[].description"  # Nested arrays
+    """
+    ...
+```
+
+### Check Functions System (checks.py)
+
+Check functions are used by dynamic rules to validate values:
+
+```python
+@dataclass
+class CheckResult:
+    """Result of a check function."""
+    passed: bool
+    message: str = ""
+
+# Type alias
+CheckFunction = Callable[[Any, dict[str, Any]], CheckResult]
+
+# Registry
+_CHECKS: dict[str, CheckFunction] = {}
+
+def register_check(name: str):
+    """Decorator to register a check function."""
+    def decorator(func: CheckFunction) -> CheckFunction:
+        _CHECKS[name] = func
+        return func
+    return decorator
+
+def get_check(name: str) -> CheckFunction | None:
+    """Get a check function by name."""
+    return _CHECKS.get(name)
+```
+
+#### Built-in Check Functions (11 total)
+
+| Function | Description | Options |
+|----------|-------------|---------|
+| `pattern` | Regex matching | `match`, `notMatch` |
+| `minLength` | Minimum string length | `min` |
+| `maxLength` | Maximum string length | `max` |
+| `required` | Value exists and not empty | `allowEmpty` |
+| `notEmpty` | Value is not null/empty | - |
+| `startsWith` | String prefix check | `prefix` (str or list) |
+| `endsWith` | String suffix check | `suffix` (str or list) |
+| `casing` | Naming convention | `convention` (snake_case, camelCase, etc.) |
+| `enum` | Value in allowed list | `values` |
+| `type` | Type checking | `type` (string, number, boolean, etc.) |
+| `range` | Numeric range | `min`, `max` |
+
+Example check function:
+
+```python
+@register_check("startsWith")
+def check_starts_with(value: Any, options: dict[str, Any]) -> CheckResult:
+    """Check if string starts with a prefix."""
+    prefixes = options.get("prefix", [])
+    if isinstance(prefixes, str):
+        prefixes = [prefixes]
+    
+    if not isinstance(value, str):
+        return CheckResult(passed=True)  # Skip non-strings
+    
+    for prefix in prefixes:
+        if value.startswith(prefix):
+            return CheckResult(passed=True)
+    
+    return CheckResult(
+        passed=False,
+        message=f"Value '{value}' must start with one of: {prefixes}"
+    )
+```
+
+### Dynamic Rule System (dynamic_rule.py)
+
+Dynamic rules allow users to create custom rules in YAML without writing Python:
+
+```python
+class DynamicRule(Rule):
+    """A rule defined dynamically via YAML configuration."""
+    
+    category = "custom"
+    
+    def __init__(
+        self,
+        rule_id: str,
+        target: str,           # Path pattern, e.g., "tools[].name"
+        check_name: str,       # Check function name
+        options: dict = None,  # Check options
+        severity: str = "warn",
+        message: str = None,   # Custom message template
+        description: str = None,
+        recommendation: str = None,
+    ):
+        self.id = rule_id
+        self.target = target
+        self.check_name = check_name
+        self.check_options = options or {}
+        self.default_severity = Severity.from_string(severity)
+        self.custom_message = message
+        ...
+    
+    def check(self, data: dict, config: RuleConfig, source: str = "") -> list[Finding]:
+        findings = []
+        
+        # Get the check function
+        check_func = get_check(self.check_name)
+        if check_func is None:
+            return findings  # Unknown check
+        
+        # Query all values matching the target path
+        for match in query_path(data, self.target):
+            result = check_func(match.value, self.check_options)
+            
+            if not result.passed:
+                message = self._format_message(result.message, match.value, match.path)
+                findings.append(self.create_finding(
+                    message=message,
+                    path=match.path,
+                    config=config,
+                    source=source,
+                ))
+        
+        return findings
+    
+    def _format_message(self, default_message: str, value: Any, path: str) -> str:
+        """Format message with {value}, {path}, {check} placeholders."""
+        if self.custom_message:
+            return self.custom_message.format(value=value, path=path, check=self.check_name)
+        return default_message
+```
+
+#### Parsing Dynamic Rules from Config
+
+```python
+def parse_dynamic_rules(rules_config: dict[str, Any]) -> list[DynamicRule]:
+    """Parse all dynamic rules from a rules configuration.
+    
+    A rule is dynamic if it has both 'target' and 'check' fields.
+    """
+    dynamic_rules = []
+    
+    for rule_id, rule_def in rules_config.items():
+        if isinstance(rule_def, dict) and "target" in rule_def and "check" in rule_def:
+            rule = DynamicRule(
+                rule_id=rule_id,
+                target=rule_def["target"],
+                check_name=rule_def["check"],
+                options=rule_def.get("options"),
+                severity=rule_def.get("severity", "warn"),
+                message=rule_def.get("message"),
+            )
+            dynamic_rules.append(rule)
+    
+    return dynamic_rules
+```
+
+### LintOrchestrator (orchestrator.py)
+
+The orchestrator handles all input sources and keeps the CLI thin:
+
+```python
+@dataclass
+class LintOptions:
+    """Options for running the linter."""
+    files: list[str] | None = None
+    server_url: str | None = None
+    bearer_token: str | None = None
+    custom_headers: dict[str, str] | None = None
+    config: LintConfig | None = None
+    verbose: bool = False
+    log: Callable[[str], None] | None = None
+
+class LintOrchestrator:
+    """Orchestrates linting across multiple input sources."""
+    
+    def __init__(self):
+        self.linter = SchemaLinter()
+    
+    def list_rules(self) -> list[dict]:
+        """List all available linting rules."""
+        return self.linter.list_rules()
+    
+    async def run(self, options: LintOptions) -> list[LintResult]:
+        """Run linting with the given options."""
+        config = options.config or LintConfig()
+        results: list[LintResult] = []
+        
+        # 1. Lint static files
+        if options.files:
+            file_results = self.linter.lint_files(options.files, config)
+            results.extend(file_results)
+        
+        # 2. Lint live HTTP server
+        if options.server_url:
+            server_results = await self._lint_server(options, config)
+            results.extend(server_results)
+        
+        return results
+    
+    async def _lint_server(self, options: LintOptions, config: LintConfig) -> list[LintResult]:
+        """Lint a live MCP server via HTTP."""
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamablehttp_client
+        
+        # Connect to server, fetch tools/prompts/resources, lint each
+        ...
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Separate from Security Analyzers** | Different purpose (quality vs threats), different output models, different configuration |
+| **Spectral-like Config** | Familiar to API developers, supports `extends`, per-rule overrides |
+| **Dynamic Rules via YAML** | Users can add custom rules without Python code |
+| **Path Resolver with query_path()** | Enables pattern-based queries like `tools[].inputSchema.properties[].type` |
+| **LintOrchestrator** | Keeps CLI thin (~20 lines handler), all logic in testable class |
+| **RuleRegistry** | Centralized rule management, easy to add new rules |
+| **CheckResult dataclass** | Clean separation between check logic and finding creation |
+| **Factory methods on LintResult** | Clean error handling with `LintResult.connection_error()`, etc. |
 
 ---
 
@@ -648,21 +1112,27 @@ rules:
 - ✅ CLI `--rule` overrides
 - ✅ Config validation with fuzzy suggestions
 
-### Phase 2: Custom Rules (YAML-defined) 📋 TODO
+### Phase 2: Custom Rules (YAML-defined) ✅ IMPLEMENTED
 
-Users can define simple custom rules:
+Users can define custom rules in YAML without writing Python:
 
 ```yaml
 rules:
-  # Custom rule
+  # Custom rule - requires 'target' and 'check' fields
   custom-tool-prefix:
-    target: "tools[].name"           # Simplified path
-    check: "pattern"                  # Built-in check function
+    target: "tools[].name"           # Path pattern to query
+    check: "startsWith"               # Built-in check function
     options:
-      match: "^mycompany_"
+      prefix: "mycompany_"
     severity: error
-    message: "Tool name must start with 'mycompany_'"
+    message: "Tool name '{value}' must start with 'mycompany_'"
 ```
+
+**Implemented features:**
+- ✅ Path queries with `[]` wildcard (`tools[].name`, `tools[].inputSchema.properties[]`)
+- ✅ 11 built-in check functions (pattern, minLength, maxLength, required, enum, type, notEmpty, startsWith, endsWith, casing, range)
+- ✅ Message templating with `{value}`, `{path}`, `{check}` placeholders
+- ✅ Extends support (`mcp:recommended`, `mcp:strict`, `mcp:quality`)
 
 ### Phase 3: Plugin Functions (Python) 📋 TODO
 
@@ -851,10 +1321,6 @@ Machine-readable output for CI/CD pipelines:
 }
 ```
 
-### SARIF 📋 TODO (Phase 2)
-
-GitHub Code Scanning compatible format.
-
 ---
 
 ## Implementation Phases
@@ -945,7 +1411,6 @@ rules:
 **Scope:**
 - `--llm` flag for LLM-powered quality checks
 - Reuse existing LLM infrastructure
-- SARIF output format
 
 **LLM Checks to Implement:**
 - `llm-description-quality` - Is description helpful?
@@ -1100,7 +1565,7 @@ mcp-scanner lint --fix --tools tools.json
 
 ## Appendix A: Comparison with Spectral
 
-| Feature | Spectral | MCP Linter (Phase 1) | MCP Linter (Future) |
+| Feature | Spectral | MCP Linter (Current) | MCP Linter (Future) |
 |---------|----------|----------------------|---------------------|
 | Built-in rules | ✅ | ✅ 37 rules | ✅ |
 | YAML config | ✅ | ✅ | ✅ |
@@ -1108,12 +1573,12 @@ mcp-scanner lint --fix --tools tools.json
 | Severity override | ✅ | ✅ | ✅ |
 | Config validation | ✅ | ✅ with fuzzy match | ✅ |
 | Table output | ❌ | ✅ api-insights style | ✅ |
-| Custom rules | ✅ | ❌ | 📋 TODO |
-| Extends | ✅ | ❌ | 📋 TODO |
-| JSONPath | ✅ | ❌ | 📋 TODO |
-| Custom functions | ✅ | ❌ | 📋 TODO |
+| Custom rules (YAML) | ✅ | ✅ Dynamic rules | ✅ |
+| Extends | ✅ | ✅ mcp:recommended/strict/quality | ✅ |
+| Path queries | ✅ Full JSONPath | ✅ Simplified (`tools[].name`) | 📋 Full JSONPath |
+| Check functions | ✅ | ✅ 11 built-in | ✅ |
+| Custom functions (Python) | ✅ | ❌ | 📋 TODO |
 | LLM quality checks | ❌ | ❌ | 📋 TODO |
-| SARIF output | ✅ | ❌ | 📋 TODO |
 | Auto-fix | ❌ | ❌ | 📋 TODO |
 
 ---
@@ -1171,6 +1636,7 @@ rules:
 
 ### What's Implemented ✅
 
+**Phase 1 (Core):**
 1. **37 built-in static rules** covering tools, prompts, resources, general
 2. **Config is YAML** - `.mcp-lint.yaml` in project root
 3. **Severity levels:** error, warn, info, hint, off
@@ -1180,14 +1646,19 @@ rules:
 7. **Clean architecture:** LintOrchestrator separates CLI from logic
 8. **Error separation:** Infrastructure errors vs linting findings
 
+**Phase 2a (Dynamic Rulesets):**
+9. **Dynamic rules in YAML** - Custom rules without Python code
+10. **11 built-in check functions** - pattern, minLength, startsWith, casing, etc.
+11. **Path query system** - `tools[].name`, `tools[].inputSchema.properties[]`
+12. **Extends support** - `mcp:recommended`, `mcp:strict`, `mcp:quality` rulesets
+13. **Message templating** - Use `{value}`, `{path}` in custom messages
+
 ### What's TODO 📋
 
 1. **LLM quality checks** via `--llm` flag
-2. **Dynamic rulesets** - `extends`, custom YAML rules
-3. **Stdio server** input support
-4. **Known configs** scanning
-5. **SARIF output** for GitHub integration
-6. **Python plugin** functions for custom rules
+2. **Stdio server** input support
+3. **Known configs** scanning
+4. **Python plugin** functions for custom rules
 
 ### Key Files
 
